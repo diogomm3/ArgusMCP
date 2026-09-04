@@ -21,7 +21,7 @@ def ping() -> str:
 # Register domain toolsets
 register_trading212_tools(mcp)
 
-app = AuthMiddleware(mcp.sse_app())
+app = AuthMiddleware(mcp.streamable_http_app(host="0.0.0.0"))
 
 if __name__ == "__main__":
     import uvicorn

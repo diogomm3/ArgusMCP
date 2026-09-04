@@ -18,7 +18,11 @@ class AuthMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http":
             path = scope.get("path", "")
-            if path.startswith("/sse") or path.startswith("/messages"):
+            if (
+                path.startswith("/mcp")
+                or path.startswith("/sse")
+                or path.startswith("/messages")
+            ):
                 headers = dict(scope.get("headers", []))
                 auth = headers.get(b"authorization", b"").decode("latin-1")
                 expected = f"Bearer {settings.mcp_auth_token}"
