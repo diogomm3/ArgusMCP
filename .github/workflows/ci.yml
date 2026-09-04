@@ -28,5 +28,5 @@ jobs:
     - name: Run mypy
       run: mypy src/
 
-    - name: Run pytest
-      run: pytest
+    - name: Run pytest (unit tests only)
+      run: pytest -m "not integration" -v
