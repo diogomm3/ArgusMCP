@@ -20,8 +20,11 @@ WORKDIR /app
 # Copy python dependencies from builder
 COPY --from=builder /install /usr/local
 
-# Create non-root user
-RUN useradd -m appuser && chown -R appuser:appuser /app
+# Install curl for healthcheck and create non-root user
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Copy app code
