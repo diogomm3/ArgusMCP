@@ -27,16 +27,18 @@ class Trading212Client:
     def __init__(
         self,
         api_key: str | None = None,
+        api_secret: str | None = None,
         env: str | None = None,
         timeout: float = 10.0,
     ) -> None:
         self._api_key = api_key or settings.trading212_api_key
+        self._api_secret = api_secret or settings.trading212_api_secret
         self._env = env or settings.trading212_env
         base_url = _BASE_URLS.get(self._env, _BASE_URLS["demo"])
         self._client = httpx.AsyncClient(
             base_url=base_url,
+            auth=(self._api_key, self._api_secret),
             headers={
-                "Authorization": self._api_key,
                 "Content-Type": "application/json",
             },
             timeout=timeout,

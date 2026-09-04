@@ -39,13 +39,18 @@ ACCOUNT_PAYLOAD = {
 @respx.mock
 async def test_get_positions_parses_response() -> None:
     """Trading212Client.get_positions() maps the API payload to Position models."""
-    respx.get("https://demo.trading212.com/api/v0/equity/portfolio").mock(
+    route = respx.get("https://demo.trading212.com/api/v0/equity/portfolio").mock(
         return_value=Response(200, json=POSITIONS_PAYLOAD)
     )
 
-    async with Trading212Client(api_key="test_key", env="demo") as client:
+    async with Trading212Client(
+        api_key="test_key", api_secret="test_secret", env="demo"
+    ) as client:
         positions = await client.get_positions()
 
+    assert route.called
+    auth_header = route.calls.last.request.headers.get("Authorization", "")
+    assert auth_header.startswith("Basic ")
     assert len(positions) == 2
     assert positions[0].ticker == "AAPL_US_EQ"
     assert positions[0].quantity == Decimal("10.0")
@@ -57,13 +62,18 @@ async def test_get_positions_parses_response() -> None:
 @respx.mock
 async def test_get_account_parses_response() -> None:
     """Trading212Client.get_account() maps the API payload to AccountSummary."""
-    respx.get("https://demo.trading212.com/api/v0/equity/account/cash").mock(
+    route = respx.get("https://demo.trading212.com/api/v0/equity/account/cash").mock(
         return_value=Response(200, json=ACCOUNT_PAYLOAD)
     )
 
-    async with Trading212Client(api_key="test_key", env="demo") as client:
+    async with Trading212Client(
+        api_key="test_key", api_secret="test_secret", env="demo"
+    ) as client:
         account = await client.get_account()
 
+    assert route.called
+    auth_header = route.calls.last.request.headers.get("Authorization", "")
+    assert auth_header.startswith("Basic ")
     assert account.cash == Decimal("1500.00")
     assert account.invested == Decimal("2950.00")
     assert account.result == Decimal("18.00")
@@ -79,5 +89,7 @@ async def test_get_positions_raises_on_401() -> None:
     )
 
     with pytest.raises(Exception):
-        async with Trading212Client(api_key="bad_key", env="demo") as client:
+        async with Trading212Client(
+            api_key="bad_key", api_secret="bad_secret", env="demo"
+        ) as client:
             await client.get_positions()
