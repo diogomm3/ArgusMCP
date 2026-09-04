@@ -8,7 +8,7 @@ dependencies = [
     "pydantic-settings",
     "mcp",
     "structlog",
-    "fastapi",
+    "httpx",
     "uvicorn"
 ]
 
@@ -18,7 +18,7 @@ dev = [
     "mypy",
     "pytest",
     "pre-commit",
-    "httpx"
+    "respx"
 ]
 
 [tool.ruff]
