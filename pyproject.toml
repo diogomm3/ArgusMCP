@@ -9,25 +9,34 @@ dependencies = [
     "mcp",
     "structlog",
     "httpx",
-    "uvicorn"
+    "uvicorn",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg",
+    "alembic",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff",
+    "ruff==0.16.6",
     "mypy",
     "pytest",
     "pre-commit",
-    "respx"
+    "respx",
+    "testcontainers[postgres]",
+    "pytest-asyncio",
 ]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 88
+exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = []
+
+[tool.ruff.lint.isort]
+known-third-party = ["alembic"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -38,6 +47,7 @@ ignore_missing_imports = true
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
+asyncio_mode = "auto"
 markers = [
     "unit: marks tests as isolated unit tests",
     "integration: marks tests as live integration tests requiring network/credentials",

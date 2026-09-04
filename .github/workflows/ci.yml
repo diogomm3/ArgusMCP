@@ -26,7 +26,19 @@ jobs:
       run: ruff check .
 
     - name: Run mypy
+      env:
+        TRADING212_API_KEY: ci-dummy
+        TRADING212_API_SECRET: ci-dummy
+        FMP_API_KEY: ci-dummy
+        MCP_AUTH_TOKEN: ci-dummy
+        DATABASE_URL: postgresql+asyncpg://ci:ci@localhost/ci
       run: mypy src/
 
     - name: Run pytest (unit tests only)
+      env:
+        TRADING212_API_KEY: ci-dummy
+        TRADING212_API_SECRET: ci-dummy
+        FMP_API_KEY: ci-dummy
+        MCP_AUTH_TOKEN: ci-dummy
+        DATABASE_URL: postgresql+asyncpg://ci:ci@localhost/ci
       run: pytest -m "not integration" -v
