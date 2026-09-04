@@ -4,6 +4,7 @@ from pydantic import ValidationError
 from mcp_finance.settings import Settings
 
 
+@pytest.mark.unit
 def test_settings_load_correctly(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that Settings model parses valid env vars correctly."""
     monkeypatch.setenv("TRADING212_API_KEY", "test_key")
@@ -26,6 +27,7 @@ def test_settings_load_correctly(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.database_url == "sqlite:///:memory:"
 
 
+@pytest.mark.unit
 def test_settings_missing_var_raises_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """Test that a missing required variable raises a validation error."""
     # Ensure environment is clear of one required var

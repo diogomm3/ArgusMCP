@@ -35,6 +35,7 @@ ACCOUNT_PAYLOAD = {
 }
 
 
+@pytest.mark.unit
 @pytest.mark.anyio
 @respx.mock
 async def test_get_positions_parses_response() -> None:
@@ -58,6 +59,7 @@ async def test_get_positions_parses_response() -> None:
     assert positions[1].ppl == Decimal("-50.00")
 
 
+@pytest.mark.unit
 @pytest.mark.anyio
 @respx.mock
 async def test_get_account_parses_response() -> None:
@@ -80,6 +82,7 @@ async def test_get_account_parses_response() -> None:
     assert account.total == Decimal("4468.00")
 
 
+@pytest.mark.unit
 @pytest.mark.anyio
 @respx.mock
 async def test_get_positions_raises_on_401() -> None:

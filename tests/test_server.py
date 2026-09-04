@@ -1,3 +1,4 @@
+import pytest
 from starlette.testclient import TestClient
 
 from mcp_finance.server import app
@@ -6,6 +7,7 @@ from mcp_finance.settings import settings
 client = TestClient(app)
 
 
+@pytest.mark.unit
 def test_missing_auth() -> None:
     """Test that requests without auth token are rejected."""
     response = client.get("/sse")
@@ -16,6 +18,7 @@ def test_missing_auth() -> None:
     assert response.status_code == 401
 
 
+@pytest.mark.unit
 def test_wrong_auth() -> None:
     """Test that requests with wrong auth token are rejected."""
     headers = {"Authorization": "Bearer wrong_token_here"}
@@ -26,6 +29,7 @@ def test_wrong_auth() -> None:
     assert response.status_code == 401
 
 
+@pytest.mark.unit
 def test_correct_auth_passes() -> None:
     """Test that a correct auth token is accepted.
 

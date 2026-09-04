@@ -39,5 +39,6 @@ plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]
 markers = [
+    "unit: marks tests as isolated unit tests",
     "integration: marks tests as live integration tests requiring network/credentials",
 ]
