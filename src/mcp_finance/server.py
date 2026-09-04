@@ -1,8 +1,6 @@
-from collections.abc import Awaitable, Callable
-
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse
 from mcp.server.mcpserver import MCPServer
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from mcp_finance.logger import configure_logging, get_logger
 from mcp_finance.settings import settings
@@ -19,26 +17,31 @@ def ping() -> str:
     return "pong"
 
 
-app = FastAPI()
+class AuthMiddleware:
+    """Pure ASGI middleware enforcing Bearer token authentication."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path.startswith("/sse") or path.startswith("/messages"):
+                headers = dict(scope.get("headers", []))
+                auth = headers.get(b"authorization", b"").decode("latin-1")
+                expected = f"Bearer {settings.mcp_auth_token}"
+                if auth != expected:
+                    logger.warning("Unauthorized access attempt", path=path)
+                    response = JSONResponse(
+                        status_code=401,
+                        content={"detail": "Unauthorized"},
+                    )
+                    await response(scope, receive, send)
+                    return
+        await self.app(scope, receive, send)
 
 
-@app.middleware("http")  # type: ignore[misc]
-async def auth_middleware(
-    request: Request,
-    call_next: Callable[[Request], Awaitable[Response]],
-) -> Response:
-    # Only enforce auth on the SSE and messages endpoints
-    if request.url.path.startswith("/sse") or request.url.path.startswith("/messages"):
-        auth_header = request.headers.get("Authorization")
-        expected = f"Bearer {settings.mcp_auth_token}"
-        if not auth_header or auth_header != expected:
-            logger.warning("Unauthorized access attempt")
-            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
-    return await call_next(request)
-
-
-# Mount the MCP SSE ASGI application at the root
-app.mount("/", mcp.sse_app())
+app = AuthMiddleware(mcp.sse_app())
 
 if __name__ == "__main__":
     import uvicorn

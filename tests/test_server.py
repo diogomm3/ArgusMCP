@@ -1,4 +1,4 @@
-from fastapi.testclient import TestClient
+from starlette.testclient import TestClient
 
 from mcp_finance.server import app
 from mcp_finance.settings import settings
@@ -12,7 +12,7 @@ def test_missing_auth() -> None:
     assert response.status_code == 401
     assert response.json() == {"detail": "Unauthorized"}
 
-    response = client.post("/messages")
+    response = client.post("/messages/")
     assert response.status_code == 401
 
 
@@ -22,19 +22,18 @@ def test_wrong_auth() -> None:
     response = client.get("/sse", headers=headers)
     assert response.status_code == 401
 
-    response = client.post("/messages", headers=headers)
+    response = client.post("/messages/", headers=headers)
     assert response.status_code == 401
 
 
 def test_correct_auth_passes() -> None:
     """Test that a correct auth token is accepted.
 
-    We don't do a full SSE handshake here to keep it simple, but we verify
-    the endpoint accepts the token and attempts to proceed.
+    We verify auth passes by checking we don't get a 401 on /messages/.
+    The MCP layer will return 404 (no session), not 401.
     """
     headers = {"Authorization": f"Bearer {settings.mcp_auth_token}"}
-
-    # POST to /messages with correct auth but no valid session
-    # (since we didn't connect via GET /sse). It should not return 401.
-    response = client.post("/messages", headers=headers)
+    # POST to /messages/ with correct auth — session won't exist, but we should
+    # get a non-401 (e.g. 404) back, proving auth passed.
+    response = client.post("/messages/", headers=headers)
     assert response.status_code != 401
