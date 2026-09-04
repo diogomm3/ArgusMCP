@@ -4,14 +4,21 @@ version = "0.1.0"
 description = "A standalone finance MCP repo"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic-settings",
+    "mcp",
+    "structlog",
+    "fastapi",
+    "uvicorn"
+]
 
 [project.optional-dependencies]
 dev = [
     "ruff",
     "mypy",
     "pytest",
-    "pre-commit"
+    "pre-commit",
+    "httpx"
 ]
 
 [tool.ruff]
@@ -27,3 +34,4 @@ python_version = "3.12"
 strict = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
+plugins = ["pydantic.mypy"]

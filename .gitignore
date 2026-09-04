@@ -11,3 +11,6 @@ env/
 .coverage
 htmlcov/
 *.sqlite3
+*.egg-info/
+dist/
+build/
