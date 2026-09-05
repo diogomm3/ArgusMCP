@@ -5,7 +5,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_finance.auth import AuthMiddleware
 from mcp_finance.brokers.trading212_tools import register_trading212_tools
 from mcp_finance.logger import configure_logging, get_logger
-from mcp_finance.market_data.tools import register_market_data_tools
+from mcp_finance.market_data.yfinance_tools import register_yfinance_tools
 
 configure_logging()
 logger = get_logger(__name__)
@@ -21,7 +21,7 @@ def ping() -> str:
 
 # Register domain toolsets
 register_trading212_tools(mcp)
-register_market_data_tools(mcp)
+register_yfinance_tools(mcp)
 
 app = AuthMiddleware(mcp.streamable_http_app(host="0.0.0.0"))
 

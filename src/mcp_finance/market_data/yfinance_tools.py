@@ -12,11 +12,11 @@ from mcp_finance.market_data.models import (
     PriceQuote,
 )
 from mcp_finance.market_data.service import MarketDataService
-from mcp_finance.market_data.yfinance_client import YFinanceClient
+from mcp_finance.market_data.yfinance import YFinanceClient
 
 
-def register_market_data_tools(mcp: MCPServer) -> None:
-    """Register market data MCP tools with the server."""
+def register_yfinance_tools(mcp: MCPServer) -> None:
+    """Register yfinance MCP tools with the server."""
 
     @mcp.tool()
     async def get_symbol_price(input: GetSymbolPriceInput) -> PriceQuote:

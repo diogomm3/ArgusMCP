@@ -10,7 +10,7 @@ from mcp_finance.logger import get_logger
 from mcp_finance.market_data import MarketDataClient
 from mcp_finance.market_data.models import OhlcvRecord, PriceQuote
 from mcp_finance.market_data.utils import derive_exchange
-from mcp_finance.market_data.yfinance_client import YFinanceClient
+from mcp_finance.market_data.yfinance import YFinanceClient
 
 logger = get_logger(__name__)
 
