@@ -193,3 +193,13 @@ class YFinanceClient:
             self._fetch_quote_sync,
             symbol,
         )
+
+    async def aclose(self) -> None:
+        """Close any allocated resources."""
+        pass
+
+    async def __aenter__(self) -> "YFinanceClient":
+        return self
+
+    async def __aexit__(self, *_: object) -> None:
+        await self.aclose()

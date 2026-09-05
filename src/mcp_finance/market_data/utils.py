@@ -1,5 +1,10 @@
 """Utilities for market data formatting, exchange derivation, and symbol parsing."""
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mcp_finance.market_data.yfinance import YFinanceClient
+
 _SUFFIX_EXCHANGE_MAP: dict[str, str] = {
     ".L": "LSE",
     ".IL": "LSE",
@@ -37,3 +42,10 @@ def derive_exchange(ticker: str, explicit_exchange: str | None = None) -> str:
             return exchange
 
     return "US"
+
+
+def get_yfinance_client() -> "YFinanceClient":
+    """Return a fresh YFinanceClient per call."""
+    from mcp_finance.market_data.yfinance import YFinanceClient
+
+    return YFinanceClient()

@@ -12,7 +12,7 @@ from mcp_finance.market_data.models import (
     PriceQuote,
 )
 from mcp_finance.market_data.service import MarketDataService
-from mcp_finance.market_data.yfinance import YFinanceClient
+from mcp_finance.market_data.utils import get_yfinance_client
 
 
 def register_yfinance_tools(mcp: MCPServer) -> None:
@@ -28,8 +28,8 @@ def register_yfinance_tools(mcp: MCPServer) -> None:
         portfolio valuation. For trade-related valuations, use Trading212 broker tools
         (`get_positions`, `get_account`).
         """
-        client = YFinanceClient()
-        return await client.get_current_price(input.symbol)
+        async with get_yfinance_client() as client:
+            return await client.get_current_price(input.symbol)
 
     @mcp.tool()
     async def get_history(input: GetHistoryInput) -> list[OhlcvRecord]:
@@ -44,11 +44,12 @@ def register_yfinance_tools(mcp: MCPServer) -> None:
         end = datetime.date.fromisoformat(input.end_date)
 
         async with get_session() as session:
-            service = MarketDataService(session=session)
-            return await service.get_history(
-                ticker=input.symbol,
-                start=start,
-                end=end,
-                exchange=input.exchange,
-                sync_on_miss=True,
-            )
+            async with get_yfinance_client() as client:
+                service = MarketDataService(session=session, client=client)
+                return await service.get_history(
+                    ticker=input.symbol,
+                    start=start,
+                    end=end,
+                    exchange=input.exchange,
+                    sync_on_miss=True,
+                )
