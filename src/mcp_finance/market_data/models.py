@@ -6,6 +6,36 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 
+class GetSymbolPriceInput(BaseModel):
+    """Input parameters for get_symbol_price tool."""
+
+    symbol: str = Field(
+        ...,
+        description="Ticker symbol",
+    )
+
+
+class GetHistoryInput(BaseModel):
+    """Input parameters for get_history tool."""
+
+    symbol: str = Field(
+        ...,
+        description="Ticker symbol",
+    )
+    start_date: str = Field(
+        ...,
+        description="Start date in YYYY-MM-DD format",
+    )
+    end_date: str = Field(
+        ...,
+        description="End date in YYYY-MM-DD format",
+    )
+    exchange: str | None = Field(
+        default=None,
+        description="Optional exchange code",
+    )
+
+
 class PriceQuote(BaseModel):
     """Current price snapshot for a symbol.
 
@@ -15,10 +45,22 @@ class PriceQuote(BaseModel):
     execution-grade valuations.
     """
 
-    symbol: str = Field(..., description="Ticker symbol")
-    price: Decimal = Field(..., description="Latest market price")
-    currency: str = Field(default="USD", description="Quoted currency")
-    source: str = Field(default="yfinance", description="Data source provider")
+    symbol: str = Field(
+        ...,
+        description="Ticker symbol",
+    )
+    price: Decimal = Field(
+        ...,
+        description="Latest market price",
+    )
+    currency: str = Field(
+        default="USD",
+        description="Quoted currency",
+    )
+    source: str = Field(
+        default="yfinance",
+        description="Data source provider",
+    )
     timestamp: datetime.datetime = Field(
         default_factory=lambda: datetime.datetime.now(datetime.timezone.utc),
         description="Timestamp when the quote was fetched (UTC)",
@@ -32,22 +74,55 @@ class PriceQuote(BaseModel):
 class OhlcvRecord(BaseModel):
     """Single daily OHLCV bar representation."""
 
-    date: datetime.date = Field(..., description="Trading day")
-    open: Decimal = Field(..., description="Opening price")
-    high: Decimal = Field(..., description="Highest price of the day")
-    low: Decimal = Field(..., description="Lowest price of the day")
-    close: Decimal = Field(..., description="Closing price")
-    volume: int = Field(..., description="Trading volume")
-    source: str = Field(default="yfinance", description="Data source provider")
+    date: datetime.date = Field(
+        ...,
+        description="Trading day",
+    )
+    open: Decimal = Field(
+        ...,
+        description="Opening price",
+    )
+    high: Decimal = Field(
+        ...,
+        description="Highest price of the day",
+    )
+    low: Decimal = Field(
+        ...,
+        description="Lowest price of the day",
+    )
+    close: Decimal = Field(
+        ...,
+        description="Closing price",
+    )
+    volume: int = Field(
+        ...,
+        description="Trading volume",
+    )
+    source: str = Field(
+        default="yfinance",
+        description="Data source provider",
+    )
 
 
 class BatchIngestResult(BaseModel):
     """Summary result of a batch market data ingestion run."""
 
-    total_symbols: int = Field(..., description="Total symbols attempted")
-    succeeded: int = Field(..., description="Symbols successfully ingested")
-    failed: int = Field(..., description="Symbols that encountered errors")
-    bars_upserted: int = Field(..., description="Total OHLCV bars written to database")
+    total_symbols: int = Field(
+        ...,
+        description="Total symbols attempted",
+    )
+    succeeded: int = Field(
+        ...,
+        description="Symbols successfully ingested",
+    )
+    failed: int = Field(
+        ...,
+        description="Symbols that encountered errors",
+    )
+    bars_upserted: int = Field(
+        ...,
+        description="Total OHLCV bars written to database",
+    )
     errors: dict[str, str] = Field(
         default_factory=dict,
         description="Error messages keyed by symbol for failed tickers",

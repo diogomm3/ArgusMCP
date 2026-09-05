@@ -5,7 +5,13 @@ from typing import Protocol
 
 import pandas as pd
 
-from mcp_finance.market_data.models import BatchIngestResult, OhlcvRecord, PriceQuote
+from mcp_finance.market_data.models import (
+    BatchIngestResult,
+    GetHistoryInput,
+    GetSymbolPriceInput,
+    OhlcvRecord,
+    PriceQuote,
+)
 
 
 class MarketDataClient(Protocol):
@@ -33,6 +39,8 @@ class MarketDataClient(Protocol):
 
 __all__ = [
     "BatchIngestResult",
+    "GetHistoryInput",
+    "GetSymbolPriceInput",
     "MarketDataClient",
     "OhlcvRecord",
     "PriceQuote",
