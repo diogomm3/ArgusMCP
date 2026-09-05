@@ -9,12 +9,12 @@ import pytest
 import requests
 
 from mcp_finance.market_data.models import PriceQuote
-from mcp_finance.market_data.utils import derive_exchange
-from mcp_finance.market_data.yfinance import (
-    YFinanceClient,
+from mcp_finance.market_data.utils import (
     _clean_ohlcv_dataframe,
     _is_transient_network_error,
+    derive_exchange,
 )
+from mcp_finance.market_data.yfinance import YFinanceClient
 
 
 @pytest.mark.unit
