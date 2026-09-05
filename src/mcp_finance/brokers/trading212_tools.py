@@ -3,7 +3,7 @@
 from mcp.server.mcpserver import MCPServer
 
 from mcp_finance.brokers.models import AccountSummary, Position
-from mcp_finance.utils import get_trading212_client
+from mcp_finance.brokers.utils import get_trading212_client
 
 
 def register_trading212_tools(mcp: MCPServer) -> None:
