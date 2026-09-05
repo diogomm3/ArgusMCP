@@ -13,6 +13,9 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg",
     "alembic",
+    "yfinance==1.7.0",
+    "tenacity>=8.2,<10",
+    "pandas>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +27,7 @@ dev = [
     "respx",
     "testcontainers[postgres]",
     "pytest-asyncio",
+    "pandas-stubs",
 ]
 
 [tool.ruff]
