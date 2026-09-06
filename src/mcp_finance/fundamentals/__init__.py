@@ -15,6 +15,7 @@ from mcp_finance.fundamentals.models import (
     GetStockFundamentalsInput,
 )
 from mcp_finance.fundamentals.quota import DailyQuotaGuard, QuotaExhaustedError
+from mcp_finance.fundamentals.service import FundamentalsService
 
 
 class FundamentalsClient(Protocol):
@@ -42,6 +43,7 @@ __all__ = [
     "FMPQuotaExceededError",
     "FinancialRatios",
     "FundamentalsClient",
+    "FundamentalsService",
     "GetStockFundamentalsInput",
     "QuotaExhaustedError",
     "SymbolNotFoundError",
