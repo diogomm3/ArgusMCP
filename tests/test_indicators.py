@@ -112,23 +112,26 @@ def volatile_df() -> pd.DataFrame:
 
 @pytest.mark.unit
 def test_ema_flat_series_converges(flat_df: pd.DataFrame) -> None:
-    """EMA on a constant series should equal the constant (after first value)."""
+    """EMA on a constant series should equal the constant (after warmup)."""
     result = ema(flat_df, 20)
-    # ewm(adjust=False) initialises to the first value, so the entire series
-    # should be 50.0 (flat series, first obs = 50.0, all subsequent = 50.0).
-    assert result.dropna().shape[0] == 60
-    np.testing.assert_allclose(result.values, 50.0, rtol=1e-6)
+    # First (period - 1) values are NaN due to min_periods=20.
+    assert result.iloc[:19].isna().all()
+    valid = result.dropna()
+    assert len(valid) == 41
+    np.testing.assert_allclose(valid.values, 50.0, rtol=1e-6)
 
 
 @pytest.mark.unit
 def test_ema_linear_known_value(linear_df: pd.DataFrame) -> None:
     """EMA-20 last value on linear_df must match a reference computed independently.
 
-    Reference: pd.Series.ewm(span=20, adjust=False).mean() on the same data.
+    Reference: pd.Series.ewm(
+        span=20, min_periods=20, adjust=False
+    ).mean() on the same data.
     This is a cross-implementation consistency check — we verify our ema()
     helper produces the same result as the pandas expression it wraps.
     """
-    reference = linear_df["close"].ewm(span=20, adjust=False).mean()
+    reference = linear_df["close"].ewm(span=20, min_periods=20, adjust=False).mean()
     result = ema(linear_df, 20)
     np.testing.assert_allclose(result.values, reference.values, rtol=1e-9)
 
@@ -143,10 +146,19 @@ def test_ema_returns_series_same_length(linear_df: pd.DataFrame) -> None:
 def test_ema_custom_column(linear_df: pd.DataFrame) -> None:
     result_close = ema(linear_df, 10, column="close")
     result_open = ema(linear_df, 10, column="open")
-    # Open is close - 0.10, so EMA(open) should be EMA(close) - 0.10.
-    np.testing.assert_allclose(
-        result_open.values, result_close.values - 0.10, rtol=1e-9
-    )
+    # Open is close - 0.10, so valid EMA(open) should be EMA(close) - 0.10.
+    valid_close = result_close.dropna()
+    valid_open = result_open.dropna()
+    np.testing.assert_allclose(valid_open.values, valid_close.values - 0.10, rtol=1e-9)
+
+
+@pytest.mark.unit
+def test_ema_min_periods_returns_nan_on_insufficient_bars() -> None:
+    """EMA-50 on a 30-bar series must return all NaNs (warmup not met)."""
+    df = pd.DataFrame({"close": range(30)})
+    result = ema(df, 50)
+    assert len(result) == 30
+    assert result.isna().all()
 
 
 # ---------------------------------------------------------------------------
@@ -192,8 +204,8 @@ def test_rsi_known_value_reference(linear_df: pd.DataFrame) -> None:
     delta = linear_df["close"].diff()
     gain = delta.clip(lower=0.0)
     loss = (-delta).clip(lower=0.0)
-    avg_gain = gain.ewm(alpha=1.0 / 14, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1.0 / 14, adjust=False).mean()
+    avg_gain = gain.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
     rs = avg_gain / avg_loss
     reference = 100.0 - (100.0 / (1.0 + rs))
     reference = reference.where(avg_loss != 0.0, other=100.0)
@@ -239,10 +251,13 @@ def test_atr_known_value_reference(volatile_df: pd.DataFrame) -> None:
         ],
         axis=1,
     ).max(axis=1)
-    reference = tr.ewm(alpha=1.0 / 14, adjust=False).mean()
+    reference = tr.ewm(alpha=1.0 / 14, min_periods=14, adjust=False).mean()
 
     result = atr(volatile_df, 14)
-    np.testing.assert_allclose(result.values, reference.values, rtol=1e-9)
+    valid_idx = ~reference.isna()
+    np.testing.assert_allclose(
+        result[valid_idx].values, reference[valid_idx].values, rtol=1e-9
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -278,17 +293,24 @@ def test_macd_returns_same_length(linear_df: pd.DataFrame) -> None:
 @pytest.mark.unit
 def test_macd_known_value_reference(linear_df: pd.DataFrame) -> None:
     """MACD must match reference computed via ewm directly."""
-    ema_fast = linear_df["close"].ewm(span=12, adjust=False).mean()
-    ema_slow = linear_df["close"].ewm(span=26, adjust=False).mean()
+    ema_fast = linear_df["close"].ewm(span=12, min_periods=12, adjust=False).mean()
+    ema_slow = linear_df["close"].ewm(span=26, min_periods=26, adjust=False).mean()
     ref_macd = ema_fast - ema_slow
-    ref_signal = ref_macd.ewm(span=9, adjust=False).mean()
+    ref_signal = ref_macd.ewm(span=9, min_periods=9, adjust=False).mean()
     ref_histogram = ref_macd - ref_signal
 
     result = macd(linear_df)
-    np.testing.assert_allclose(result["macd"].values, ref_macd.values, rtol=1e-9)
-    np.testing.assert_allclose(result["signal"].values, ref_signal.values, rtol=1e-9)
+    valid_idx = ~ref_histogram.isna()
     np.testing.assert_allclose(
-        result["histogram"].values, ref_histogram.values, rtol=1e-9
+        result["macd"][valid_idx].values, ref_macd[valid_idx].values, rtol=1e-9
+    )
+    np.testing.assert_allclose(
+        result["signal"][valid_idx].values, ref_signal[valid_idx].values, rtol=1e-9
+    )
+    np.testing.assert_allclose(
+        result["histogram"][valid_idx].values,
+        ref_histogram[valid_idx].values,
+        rtol=1e-9,
     )
 
 
@@ -452,6 +474,11 @@ async def test_build_candidate_snapshot_full(monkeypatch: pytest.MonkeyPatch) ->
     assert candidate.ema_20 is not None
     assert abs(float(candidate.ema_20) - expected_ema20) < 1e-4
 
+    # EMA-50
+    expected_ema50 = float(ema(df, 50).iloc[-1])
+    assert candidate.ema_50 is not None
+    assert abs(float(candidate.ema_50) - expected_ema50) < 1e-4
+
     # RSI-14
     expected_rsi14 = rsi(df, 14).dropna().iloc[-1]
     assert candidate.rsi_14 is not None
@@ -516,3 +543,49 @@ async def test_build_candidate_snapshot_exchange_autoderived(
     symbol_repo_mock.get_by_ticker.assert_called_once_with(
         "ASML.AS", "EURONEXT_AMSTERDAM"
     )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_build_candidate_snapshot_partial_warmup_30_bars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """30 bars fixture: ema_50 must be None (< 50 bars), while ema_20 is present."""
+    session = AsyncMock()
+    bars = _make_bars(30, base_close=100.0)
+
+    symbol_row = MagicMock()
+    symbol_row.id = 10
+
+    symbol_repo_mock = AsyncMock()
+    symbol_repo_mock.get_by_ticker = AsyncMock(return_value=symbol_row)
+
+    ohlcv_repo_mock = AsyncMock()
+    ohlcv_repo_mock.fetch_range = AsyncMock(return_value=bars)
+
+    monkeypatch.setattr(
+        "mcp_finance.indicators.snapshot.SymbolRepository",
+        lambda _session: symbol_repo_mock,
+    )
+    monkeypatch.setattr(
+        "mcp_finance.indicators.snapshot.OhlcvRepository",
+        lambda _session: ohlcv_repo_mock,
+    )
+
+    as_of = datetime.date(2024, 2, 1)
+    candidate = await build_candidate_snapshot(
+        "AAPL",
+        as_of,
+        session,
+        source="yfinance",
+    )
+
+    assert candidate.symbol == "AAPL"
+    assert candidate.bars_available == 30
+    assert candidate.ema_20 is not None
+    assert candidate.ema_50 is None  # < 50 bars: must be None!
+    assert candidate.rsi_14 is not None
+    assert candidate.atr_14 is not None
+    assert candidate.macd_line is not None  # 30 >= 26
+    assert candidate.macd_signal is None  # 30 < 34 bars for signal warmup
+    assert candidate.macd_histogram is None
