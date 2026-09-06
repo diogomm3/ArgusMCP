@@ -2,6 +2,12 @@
 
 from typing import Protocol
 
+from mcp_finance.fundamentals.fmp import (
+    FMPApiError,
+    FMPClient,
+    FMPQuotaExceededError,
+    SymbolNotFoundError,
+)
 from mcp_finance.fundamentals.models import (
     CompanyFundamentals,
     CompanyProfile,
@@ -31,8 +37,12 @@ __all__ = [
     "CompanyFundamentals",
     "CompanyProfile",
     "DailyQuotaGuard",
+    "FMPApiError",
+    "FMPClient",
+    "FMPQuotaExceededError",
     "FinancialRatios",
     "FundamentalsClient",
     "GetStockFundamentalsInput",
     "QuotaExhaustedError",
+    "SymbolNotFoundError",
 ]
