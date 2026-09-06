@@ -24,43 +24,60 @@ class Candidate(BaseModel):
     """
 
     symbol: str = Field(
-        ..., description="Ticker symbol (yfinance format, e.g. 'ASML.AS')"
+        ...,
+        description="Ticker symbol (yfinance format, e.g. 'ASML.AS')",
     )
     as_of_date: datetime.date = Field(
-        ..., description="Date for which the snapshot was computed"
+        ...,
+        description="Date for which the snapshot was computed",
     )
-    source: str = Field(default="yfinance", description="OHLCV data source used")
+    source: str = Field(
+        ...,
+        description=(
+            "OHLCV data source used to compute this snapshot (yfinance, bitstamp, etc.)"
+        ),
+    )
 
     # Price as of as_of_date
-    close: Decimal = Field(..., description="Closing price on as_of_date")
+    close: Decimal = Field(
+        ...,
+        description="Closing price on as_of_date",
+    )
 
     # Momentum
     rsi_14: Decimal | None = Field(
-        default=None, description="RSI-14 (Wilder). None if < 14 bars available."
+        default=None,
+        description="RSI-14 (Wilder). None if < 14 bars available.",
     )
 
     # Trend
     ema_20: Decimal | None = Field(
-        default=None, description="EMA-20. None if < 20 bars available."
+        default=None,
+        description="EMA-20. None if < 20 bars available.",
     )
     ema_50: Decimal | None = Field(
-        default=None, description="EMA-50. None if < 50 bars available."
+        default=None,
+        description="EMA-50. None if < 50 bars available.",
     )
 
     # Volatility
     atr_14: Decimal | None = Field(
-        default=None, description="ATR-14 (Wilder). None if < 14 bars available."
+        default=None,
+        description="ATR-14 (Wilder). None if < 14 bars available.",
     )
 
     # MACD (12, 26, 9)
     macd_line: Decimal | None = Field(
-        default=None, description="MACD line (EMA12 - EMA26). None if < 26 bars."
+        default=None,
+        description="MACD line (EMA12 - EMA26). None if < 26 bars.",
     )
     macd_signal: Decimal | None = Field(
-        default=None, description="MACD signal (EMA9 of MACD line). None if < 35 bars."
+        default=None,
+        description="MACD signal (EMA9 of MACD line). None if < 35 bars.",
     )
     macd_histogram: Decimal | None = Field(
-        default=None, description="MACD histogram (macd - signal). None if < 35 bars."
+        default=None,
+        description="MACD histogram (macd - signal). None if < 35 bars.",
     )
 
     # Metadata
