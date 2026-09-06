@@ -42,8 +42,20 @@ class FundamentalsService:
         self,
         symbol: str,
         exchange: str | None = None,
-    ) -> CompanyFundamentals:
-        """Retrieve company fundamentals cache-first."""
+        allow_live: bool = True,
+    ) -> CompanyFundamentals | None:
+        """Retrieve company fundamentals, cache-first.
+
+        Args:
+            symbol:     Ticker symbol in yfinance format.
+            exchange:   Optional exchange override; derived automatically if None.
+            allow_live: When True (default), a stale or missing cache triggers live
+                        FMP HTTP calls, consuming 2 quota units. When False, only
+                        the local Postgres cache is consulted: a fresh snapshot is
+                        returned as-is, a stale snapshot is returned with
+                        is_cached=True, and a completely absent snapshot returns
+                        None without acquiring quota or making network calls.
+        """
         canonical_exchange = derive_exchange(symbol, exchange)
         clean_symbol = symbol.strip().upper()
 
@@ -66,6 +78,24 @@ class FundamentalsService:
                 payload["is_cached"] = True
                 payload["as_of_date"] = latest.as_of_date
                 return CompanyFundamentals.model_validate(payload)
+
+        # 2a. If live fetching is disabled, serve stale if present, else return None
+        if not allow_live:
+            latest = await fund_repo.get_latest(sym.id)
+            if latest is not None:
+                logger.info(
+                    "Fundamentals cache stale; serving stale (allow_live=False)",
+                    symbol=clean_symbol,
+                )
+                payload = dict(latest.payload)
+                payload["is_cached"] = True
+                payload["as_of_date"] = latest.as_of_date
+                return CompanyFundamentals.model_validate(payload)
+            logger.info(
+                "Fundamentals absent from cache; skipping FMP (allow_live=False)",
+                symbol=clean_symbol,
+            )
+            return None
 
         # 2. Cache miss or stale: reserve 2 quota units upfront
         logger.info(

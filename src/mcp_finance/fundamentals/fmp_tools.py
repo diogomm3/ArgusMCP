@@ -29,7 +29,14 @@ def register_FMP_tools(mcp: MCPServer) -> None:
         async with get_session() as session:
             async with FMPClient() as client:
                 service = FundamentalsService(session=session, client=client)
-                return await service.get_fundamentals(
+                result = await service.get_fundamentals(
                     symbol=input.symbol,
                     exchange=input.exchange,
+                    allow_live=True,
                 )
+                # allow_live=True: service raises QuotaExhaustedError rather
+                # than returning None, so None is unreachable here.
+                assert result is not None, (
+                    "Unexpected None from get_fundamentals with allow_live=True"
+                )
+                return result
