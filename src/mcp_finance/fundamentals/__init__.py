@@ -8,6 +8,7 @@ from mcp_finance.fundamentals.models import (
     FinancialRatios,
     GetStockFundamentalsInput,
 )
+from mcp_finance.fundamentals.quota import DailyQuotaGuard, QuotaExhaustedError
 
 
 class FundamentalsClient(Protocol):
@@ -29,7 +30,9 @@ class FundamentalsClient(Protocol):
 __all__ = [
     "CompanyFundamentals",
     "CompanyProfile",
+    "DailyQuotaGuard",
     "FinancialRatios",
     "FundamentalsClient",
     "GetStockFundamentalsInput",
+    "QuotaExhaustedError",
 ]
