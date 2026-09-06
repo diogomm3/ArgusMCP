@@ -28,7 +28,7 @@ def ema(df: pd.DataFrame, period: int, column: str = "close") -> "pd.Series[floa
         period: EMA span (e.g. 20 for EMA-20).
         column: Price column to smooth (default: "close").
     """
-    return df[column].ewm(span=period, adjust=False).mean()
+    return df[column].ewm(span=period, min_periods=period, adjust=False).mean()
 
 
 def rsi(
@@ -52,8 +52,8 @@ def rsi(
     loss = (-delta).clip(lower=0.0)
 
     # Wilder smoothing: alpha = 1 / period
-    avg_gain = gain.ewm(alpha=1.0 / period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1.0 / period, adjust=False).mean()
+    avg_gain = gain.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
 
     rs = avg_gain / avg_loss
     result: pd.Series[float] = 100.0 - (100.0 / (1.0 + rs))
@@ -89,7 +89,7 @@ def atr(df: pd.DataFrame, period: int = 14) -> "pd.Series[float]":
     ).max(axis=1)
 
     # Wilder smoothing
-    return tr.ewm(alpha=1.0 / period, adjust=False).mean()
+    return tr.ewm(alpha=1.0 / period, min_periods=period, adjust=False).mean()
 
 
 def macd(
@@ -117,7 +117,7 @@ def macd(
     ema_fast = ema(df, fast, column)
     ema_slow = ema(df, slow, column)
     macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    signal_line = macd_line.ewm(span=signal, min_periods=signal, adjust=False).mean()
     histogram = macd_line - signal_line
 
     return pd.DataFrame(

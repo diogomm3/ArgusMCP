@@ -48,12 +48,13 @@ def _to_decimal(value: float, places: int = 6) -> Decimal:
 
 
 def _last_valid(series: "pd.Series[float]") -> float | None:
-    """Return the last non-NaN, non-inf value of a Series, or None."""
-    valid = series.dropna()
-    valid = valid[valid.apply(lambda x: math.isfinite(x))]
-    if valid.empty:
+    """Return the last value if finite, or None if empty or NaN/inf."""
+    if series.empty:
         return None
-    return float(valid.iloc[-1])
+    val = series.iloc[-1]
+    if pd.isna(val) or not math.isfinite(float(val)):
+        return None
+    return float(val)
 
 
 async def build_candidate_snapshot(
