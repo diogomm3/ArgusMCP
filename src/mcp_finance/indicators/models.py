@@ -6,6 +6,10 @@ build_candidate_snapshot() from cached OHLCV data and pure indicator functions.
 All price/indicator fields are Decimal to maintain precision consistency with the
 NUMERIC(18, 6) database columns. None means insufficient history to compute the
 indicator (e.g. fewer than 50 bars for EMA-50).
+
+Volume fields (volume, avg_volume_20) are computed in the same single OHLCV
+DataFrame pass as the technical indicators — the screener's volume filter must
+read from these fields, never issuing a second OhlcvRepository.fetch_range call.
 """
 
 import datetime
@@ -78,6 +82,21 @@ class Candidate(BaseModel):
     macd_histogram: Decimal | None = Field(
         default=None,
         description="MACD histogram (macd - signal). None if < 35 bars.",
+    )
+
+    # Volume (computed in the same DataFrame pass as indicators)
+    volume: int | None = Field(
+        default=None,
+        description="Volume on as_of_date (last bar in the OHLCV window)",
+    )
+    avg_volume_20: int | None = Field(
+        default=None,
+        description=(
+            "Simple 20-day average volume. None if fewer than 20 bars available. "
+            "Computed from the same OHLCV fetch as all technical indicators — "
+            "the screener volume filter must read this field, not issue a second "
+            "OhlcvRepository.fetch_range call."
+        ),
     )
 
     # Metadata

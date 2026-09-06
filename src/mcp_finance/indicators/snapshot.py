@@ -112,11 +112,13 @@ async def build_candidate_snapshot(
 
     if bars_available < 2:
         # Not enough data to compute anything meaningful.
+        last_volume = int(bars[-1].volume) if bars_available == 1 else None
         return Candidate(
             symbol=symbol,
             as_of_date=as_of_date,
             source=source,
             close=Decimal(str(bars[-1].close)) if bars_available == 1 else Decimal("0"),
+            volume=last_volume,
             bars_available=bars_available,
         )
 
@@ -145,6 +147,8 @@ async def build_candidate_snapshot(
     macd_hist_val = _last_valid(macd_df["histogram"])
 
     last_close = float(bars[-1].close)
+    last_volume = int(bars[-1].volume)
+    avg_vol_20 = int(df["volume"].tail(20).mean()) if bars_available >= 20 else None
 
     return Candidate(
         symbol=symbol,
@@ -162,5 +166,7 @@ async def build_candidate_snapshot(
         macd_histogram=(
             _to_decimal(macd_hist_val) if macd_hist_val is not None else None
         ),
+        volume=last_volume,
+        avg_volume_20=avg_vol_20,
         bars_available=bars_available,
     )
