@@ -128,3 +128,23 @@ class FundamentalsCache(Base):
     )
 
     symbol: Mapped["Symbol"] = relationship("Symbol", back_populates="fundamentals")
+
+
+class FmpQuotaUsage(Base):
+    """Daily FMP request quota tracking.
+
+    Persisted in Postgres to survive container restarts and ensure multiple
+    workers/processes share an accurate view of today's quota usage.
+    Keyed on date.
+    """
+
+    __tablename__ = "fmp_quota_usage"
+
+    date: Mapped[datetime.date] = mapped_column(Date, primary_key=True)
+    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
