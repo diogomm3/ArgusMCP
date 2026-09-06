@@ -11,8 +11,8 @@ from mcp_finance.fundamentals.models import (
 from mcp_finance.fundamentals.service import FundamentalsService
 
 
-def register_fundamentals_tools(mcp: MCPServer) -> None:
-    """Register fundamentals MCP tools with the server."""
+def register_FMP_tools(mcp: MCPServer) -> None:
+    """Register FMP fundamentals MCP tools with the server."""
 
     @mcp.tool()
     async def get_stock_fundamentals(

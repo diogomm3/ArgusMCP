@@ -11,20 +11,67 @@ class CompanyProfile(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    symbol: str
-    company_name: str = Field(..., alias="companyName")
-    exchange: str = Field(..., alias="exchange")
-    currency: str = Field(..., alias="currency")
-    price: Decimal | None = None
-    market_cap: int | None = Field(default=None, alias="marketCap")
-    beta: Decimal | None = None
-    last_dividend: Decimal | None = Field(default=None, alias="lastDividend")
-    industry: str | None = None
-    sector: str | None = None
-    country: str | None = None
-    description: str | None = None
-    website: str | None = None
-    ceo: str | None = None
+    symbol: str = Field(
+        ...,
+        description="Ticker symbol",
+    )
+    company_name: str = Field(
+        ...,
+        alias="companyName",
+        description="Company legal name",
+    )
+    exchange: str = Field(
+        ...,
+        alias="exchange",
+        description="Exchange identifier",
+    )
+    currency: str = Field(
+        ...,
+        alias="currency",
+        description="Reporting currency",
+    )
+    price: Decimal | None = Field(
+        default=None,
+        description="Latest price",
+    )
+    market_cap: int | None = Field(
+        default=None,
+        alias="marketCap",
+        description="Market capitalization",
+    )
+    beta: Decimal | None = Field(
+        default=None,
+        description="Beta vs benchmark",
+    )
+    last_dividend: Decimal | None = Field(
+        default=None,
+        alias="lastDividend",
+        description="Last dividend",
+    )
+    industry: str | None = Field(
+        default=None,
+        description="Industry group",
+    )
+    sector: str | None = Field(
+        default=None,
+        description="Economic sector",
+    )
+    country: str | None = Field(
+        default=None,
+        description="Country of domicile",
+    )
+    description: str | None = Field(
+        default=None,
+        description="Company description",
+    )
+    website: str | None = Field(
+        default=None,
+        description="Company website",
+    )
+    ceo: str | None = Field(
+        default=None,
+        description="CEO name",
+    )
 
 
 class FinancialRatios(BaseModel):
@@ -32,30 +79,79 @@ class FinancialRatios(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    symbol: str
-    pe_ratio: Decimal | None = Field(default=None, alias="priceToEarningsRatioTTM")
-    price_to_book: Decimal | None = Field(default=None, alias="priceToBookRatioTTM")
-    price_to_sales: Decimal | None = Field(default=None, alias="priceToSalesRatioTTM")
+    symbol: str = Field(
+        ...,
+        description="Ticker symbol",
+    )
+    pe_ratio: Decimal | None = Field(
+        default=None,
+        alias="priceToEarningsRatioTTM",
+        description="Price/Earnings (TTM)",
+    )
+    price_to_book: Decimal | None = Field(
+        default=None,
+        alias="priceToBookRatioTTM",
+        description="Price/Book (TTM)",
+    )
+    price_to_sales: Decimal | None = Field(
+        default=None,
+        alias="priceToSalesRatioTTM",
+        description="Price/Sales (TTM)",
+    )
     enterprise_value_multiple: Decimal | None = Field(
-        default=None, alias="enterpriseValueMultipleTTM"
+        default=None,
+        alias="enterpriseValueMultipleTTM",
+        description="Enterprise Value/EBITDA (TTM)",
     )
     gross_profit_margin: Decimal | None = Field(
-        default=None, alias="grossProfitMarginTTM"
+        default=None,
+        alias="grossProfitMarginTTM",
+        description="Gross profit margin (TTM)",
     )
     operating_margin: Decimal | None = Field(
-        default=None, alias="operatingProfitMarginTTM"
+        default=None,
+        alias="operatingProfitMarginTTM",
+        description="Operating profit margin (TTM)",
     )
-    net_profit_margin: Decimal | None = Field(default=None, alias="netProfitMarginTTM")
-    current_ratio: Decimal | None = Field(default=None, alias="currentRatioTTM")
-    quick_ratio: Decimal | None = Field(default=None, alias="quickRatioTTM")
-    debt_to_equity: Decimal | None = Field(default=None, alias="debtToEquityRatioTTM")
+    net_profit_margin: Decimal | None = Field(
+        default=None,
+        alias="netProfitMarginTTM",
+        description="Net profit margin (TTM)",
+    )
+    current_ratio: Decimal | None = Field(
+        default=None,
+        alias="currentRatioTTM",
+        description="Current ratio (TTM)",
+    )
+    quick_ratio: Decimal | None = Field(
+        default=None,
+        alias="quickRatioTTM",
+        description="Quick ratio (TTM)",
+    )
+    debt_to_equity: Decimal | None = Field(
+        default=None,
+        alias="debtToEquityRatioTTM",
+        description="Debt-to-equity ratio (TTM)",
+    )
     interest_coverage: Decimal | None = Field(
-        default=None, alias="interestCoverageRatioTTM"
+        default=None,
+        alias="interestCoverageRatioTTM",
+        description="Interest coverage ratio (TTM)",
     )
-    dividend_yield: Decimal | None = Field(default=None, alias="dividendYieldTTM")
-    payout_ratio: Decimal | None = Field(default=None, alias="dividendPayoutRatioTTM")
+    dividend_yield: Decimal | None = Field(
+        default=None,
+        alias="dividendYieldTTM",
+        description="Dividend yield (TTM)",
+    )
+    payout_ratio: Decimal | None = Field(
+        default=None,
+        alias="dividendPayoutRatioTTM",
+        description="Dividend payout ratio (TTM)",
+    )
     free_cash_flow_per_share: Decimal | None = Field(
-        default=None, alias="freeCashFlowPerShareTTM"
+        default=None,
+        alias="freeCashFlowPerShareTTM",
+        description="Free cash flow per share (TTM)",
     )
 
 
@@ -64,65 +160,122 @@ class CompanyFundamentals(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    symbol: str = Field(..., description="Ticker symbol")
-    company_name: str = Field(..., description="Company legal name")
-    exchange: str = Field(..., description="Exchange identifier")
-    currency: str = Field(..., description="Reporting currency")
-    sector: str | None = Field(default=None, description="Economic sector")
-    industry: str | None = Field(default=None, description="Industry group")
-    country: str | None = Field(default=None, description="Country of domicile")
+    symbol: str = Field(
+        ...,
+        description="Ticker symbol",
+    )
+    company_name: str = Field(
+        ...,
+        description="Company legal name",
+    )
+    exchange: str = Field(
+        ...,
+        description="Exchange identifier",
+    )
+    currency: str = Field(
+        ...,
+        description="Reporting currency",
+    )
+    sector: str | None = Field(
+        default=None,
+        description="Economic sector",
+    )
+    industry: str | None = Field(
+        default=None,
+        description="Industry group",
+    )
+    country: str | None = Field(
+        default=None,
+        description="Country of domicile",
+    )
 
     # Valuation & Market Size
-    market_cap: int | None = Field(default=None, description="Market capitalization")
-    price: Decimal | None = Field(default=None, description="Latest price")
-    beta: Decimal | None = Field(default=None, description="Beta vs benchmark")
-    pe_ratio: Decimal | None = Field(default=None, description="Trailing P/E ratio")
+    market_cap: int | None = Field(
+        default=None,
+        description="Market capitalization",
+    )
+    price: Decimal | None = Field(
+        default=None,
+        description="Latest price",
+    )
+    beta: Decimal | None = Field(
+        default=None,
+        description="Beta vs benchmark",
+    )
+    pe_ratio: Decimal | None = Field(
+        default=None,
+        description="Trailing P/E ratio",
+    )
     price_to_book: Decimal | None = Field(
-        default=None, description="Price-to-Book ratio"
+        default=None,
+        description="Price-to-Book ratio",
     )
     price_to_sales: Decimal | None = Field(
-        default=None, description="Price-to-Sales ratio"
+        default=None,
+        description="Price-to-Sales ratio",
     )
     enterprise_value_multiple: Decimal | None = Field(
-        default=None, description="EV/EBITDA multiple"
+        default=None,
+        description="EV/EBITDA multiple",
     )
 
     # Profitability & Margins
     gross_profit_margin: Decimal | None = Field(
-        default=None, description="Gross profit margin"
+        default=None,
+        description="Gross profit margin",
     )
     operating_margin: Decimal | None = Field(
-        default=None, description="Operating profit margin"
+        default=None,
+        description="Operating profit margin",
     )
     net_profit_margin: Decimal | None = Field(
-        default=None, description="Net profit margin"
+        default=None,
+        description="Net profit margin",
     )
-
-    # Financial Health & Liquidity
-    current_ratio: Decimal | None = Field(default=None, description="Current ratio")
-    quick_ratio: Decimal | None = Field(default=None, description="Quick ratio")
+    current_ratio: Decimal | None = Field(
+        default=None,
+        description="Current ratio",
+    )
+    quick_ratio: Decimal | None = Field(
+        default=None,
+        description="Quick ratio",
+    )
     debt_to_equity: Decimal | None = Field(
-        default=None, description="Debt-to-Equity ratio"
+        default=None,
+        description="Debt-to-Equity ratio",
     )
     interest_coverage: Decimal | None = Field(
-        default=None, description="Interest coverage ratio"
+        default=None,
+        description="Interest coverage ratio",
     )
 
     # Dividends & Cash Flow
-    dividend_yield: Decimal | None = Field(default=None, description="Dividend yield")
+    dividend_yield: Decimal | None = Field(
+        default=None,
+        description="Dividend yield",
+    )
     payout_ratio: Decimal | None = Field(
-        default=None, description="Dividend payout ratio"
+        default=None,
+        description="Dividend payout ratio",
     )
     free_cash_flow_per_share: Decimal | None = Field(
-        default=None, description="Free cash flow per share"
+        default=None,
+        description="Free cash flow per share",
     )
 
     # Metadata & Tracking
-    as_of_date: datetime.date = Field(..., description="Date of snapshot calculation")
-    is_cached: bool = Field(
-        default=False, description="Whether data was loaded from cache"
+    as_of_date: datetime.date = Field(
+        ...,
+        description="Date of snapshot calculation",
     )
-    source: str = Field(default="fmp", description="Data source provider")
+    is_cached: bool = Field(
+        default=False,
+        description="Whether data was loaded from cache",
+    )
+    source: str = Field(
+        default="fmp",
+        description="Data source provider",
+    )
 
     @classmethod
     def from_api_data(
