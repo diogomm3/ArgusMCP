@@ -31,7 +31,7 @@ AAPL_TICKER = "AAPL"
 MSFT_TICKER = "MSFT"
 
 
-async def _seed_symbol(session: AsyncSession, ticker: str, exchange: str) -> int:
+async def _seed_symbol(session: AsyncSession, ticker: str, exchange: str = "US") -> int:
     """Upsert a symbol row and return its id."""
     result = await session.execute(
         text(
@@ -93,7 +93,7 @@ async def _seed_fundamentals_cache(
         "symbol": AAPL_TICKER,
         "company_name": "Apple Inc.",
         "sector": "Technology",
-        "exchange": "NASDAQ",
+        "exchange": "US",
         "currency": "USD",
         "market_cap": market_cap,
         "pe_ratio": str(pe_ratio),
@@ -135,7 +135,7 @@ def _make_mock_fmp_client(ticker: str = AAPL_TICKER) -> MagicMock:
             "symbol": ticker,
             "companyName": "Apple Inc.",
             "sector": "Technology",
-            "exchange": "NASDAQ",
+            "exchange": "US",
             "currency": "USD",
             "marketCap": 3_000_000_000,
             "price": "175.00",
@@ -165,7 +165,7 @@ def _make_mock_fmp_client(ticker: str = AAPL_TICKER) -> MagicMock:
 @pytest.mark.unit
 async def test_screening_engine_cache_hit_passes(db_session: AsyncSession) -> None:
     """Engine returns a passed candidate when OHLCV and fundamentals are cached."""
-    symbol_id = await _seed_symbol(db_session, AAPL_TICKER, "NASDAQ")
+    symbol_id = await _seed_symbol(db_session, AAPL_TICKER, "US")
     await _seed_ohlcv(db_session, symbol_id, n_bars=60, base_price=175.0)
     await _seed_fundamentals_cache(
         db_session, symbol_id, as_of_date=TODAY, market_cap=3_000_000_000
@@ -198,7 +198,7 @@ async def test_screening_engine_cold_cache_with_live_fmp(
     db_session: AsyncSession,
 ) -> None:
     """Engine fetches from mocked FMP when fundamentals cache is cold."""
-    symbol_id = await _seed_symbol(db_session, AAPL_TICKER, "NASDAQ")
+    symbol_id = await _seed_symbol(db_session, AAPL_TICKER, "US")
     await _seed_ohlcv(db_session, symbol_id, n_bars=60, base_price=175.0)
     # No fundamentals seeded — cold cache
 
@@ -225,7 +225,7 @@ async def test_screening_engine_allow_live_false_no_cache_returns_none(
     db_session: AsyncSession,
 ) -> None:
     """With allow_live=False and no cache, fundamentals is None and filter fails."""
-    symbol_id = await _seed_symbol(db_session, AAPL_TICKER, "NASDAQ")
+    symbol_id = await _seed_symbol(db_session, AAPL_TICKER, "US")
     await _seed_ohlcv(db_session, symbol_id, n_bars=60, base_price=175.0)
     # No fundamentals in cache
 
@@ -258,7 +258,7 @@ async def test_screening_engine_quota_exhausted_fundamentals_none(
     db_session: AsyncSession,
 ) -> None:
     """When FMP quota is exhausted, fundamentals=None and universe filter fails."""
-    symbol_id = await _seed_symbol(db_session, AAPL_TICKER, "NASDAQ")
+    symbol_id = await _seed_symbol(db_session, AAPL_TICKER, "US")
     await _seed_ohlcv(db_session, symbol_id, n_bars=60, base_price=175.0)
     # No fundamentals cache — will try live FMP
 
@@ -299,9 +299,8 @@ async def test_screening_engine_quota_exhausted_fundamentals_none(
 async def test_screening_engine_symbol_not_cached_goes_to_errors(
     db_session: AsyncSession,
 ) -> None:
-    """Symbol with no OHLCV rows goes to errors dict, not failed_candidates."""
-    # Don't seed any OHLCV for MSFT
-    await _seed_symbol(db_session, MSFT_TICKER, "NASDAQ")
+    """Symbol with no symbol row in DB goes to errors dict, not failed_candidates."""
+    # MSFT is never seeded in symbols table
 
     mock_client = _make_mock_fmp_client(MSFT_TICKER)
     service = FundamentalsService(session=db_session, client=mock_client)
@@ -326,10 +325,10 @@ async def test_screening_engine_multi_symbol_isolation(
     db_session: AsyncSession,
 ) -> None:
     """One bad symbol does not prevent the other symbol from being evaluated."""
-    aapl_id = await _seed_symbol(db_session, AAPL_TICKER, "NASDAQ")
+    aapl_id = await _seed_symbol(db_session, AAPL_TICKER, "US")
     await _seed_ohlcv(db_session, aapl_id, n_bars=60, base_price=175.0)
     await _seed_fundamentals_cache(db_session, aapl_id, as_of_date=TODAY)
-    await _seed_symbol(db_session, MSFT_TICKER, "NASDAQ")  # no OHLCV
+    # MSFT is not seeded in symbols table — will fail with SymbolNotCachedError
 
     mock_client = _make_mock_fmp_client(AAPL_TICKER)
     service = FundamentalsService(session=db_session, client=mock_client)
