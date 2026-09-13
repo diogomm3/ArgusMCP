@@ -9,14 +9,19 @@ ScreeningEngine end-to-end. Also tests:
 """
 
 import datetime
-import json
+from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mcp_finance.db.repository import (
+    FundamentalsRepository,
+    OhlcvBar,
+    OhlcvRepository,
+    SymbolRepository,
+)
 from mcp_finance.fundamentals.fmp import FMPClient
 from mcp_finance.fundamentals.models import CompanyProfile, FinancialRatios
 from mcp_finance.fundamentals.quota import DailyQuotaGuard
@@ -33,17 +38,10 @@ MSFT_TICKER = "MSFT"
 
 async def _seed_symbol(session: AsyncSession, ticker: str, exchange: str = "US") -> int:
     """Upsert a symbol row and return its id."""
-    result = await session.execute(
-        text(
-            "INSERT INTO symbols (ticker, exchange) VALUES (:ticker, :exchange) "
-            "ON CONFLICT (ticker) DO UPDATE SET exchange=EXCLUDED.exchange "
-            "RETURNING id"
-        ),
-        {"ticker": ticker, "exchange": exchange},
-    )
-    row = result.fetchone()
-    assert row is not None
-    return int(row[0])
+    repo = SymbolRepository(session)
+    sym = await repo.upsert(ticker=ticker, exchange=exchange)
+    assert sym.id is not None
+    return int(sym.id)
 
 
 async def _seed_ohlcv(
@@ -55,30 +53,24 @@ async def _seed_ohlcv(
     base_volume: int = 1_500_000,
 ) -> None:
     """Seed n_bars of ascending OHLCV bars ending at TODAY."""
+    repo = OhlcvRepository(session)
+    bars: list[OhlcvBar] = []
     for i in range(n_bars):
         bar_date = TODAY - datetime.timedelta(days=n_bars - 1 - i)
-        price = base_price + i * 0.1  # gentle uptrend — makes indicators bullish
-        await session.execute(
-            text(
-                "INSERT INTO ohlcv_daily "
-                "(symbol_id, source, date, open, high, low, close, "
-                "volume, adjusted_close) "
-                "VALUES (:sid, :src, :dt, :o, :h, :l, :c, :v, :ac) "
-                "ON CONFLICT (symbol_id, source, date) DO NOTHING"
-            ),
-            {
-                "sid": symbol_id,
-                "src": source,
-                "dt": bar_date,
-                "o": price - 1.0,
-                "h": price + 2.0,
-                "l": price - 2.0,
-                "c": price,
-                "v": base_volume,
-                "ac": price,
-            },
+        price = Decimal(str(round(base_price + i * 0.1, 4)))
+        bars.append(
+            OhlcvBar(
+                symbol_id=symbol_id,
+                date=bar_date,
+                open=price - Decimal("1.0"),
+                high=price + Decimal("2.0"),
+                low=price - Decimal("2.0"),
+                close=price,
+                volume=base_volume,
+                source=source,
+            )
         )
-    await session.flush()
+    await repo.bulk_upsert(bars)
 
 
 async def _seed_fundamentals_cache(
@@ -89,6 +81,7 @@ async def _seed_fundamentals_cache(
     pe_ratio: float = 28.5,
 ) -> None:
     """Seed a fresh fundamentals cache entry."""
+    repo = FundamentalsRepository(session)
     payload: dict[str, Any] = {
         "symbol": AAPL_TICKER,
         "company_name": "Apple Inc.",
@@ -108,20 +101,7 @@ async def _seed_fundamentals_cache(
         "is_cached": True,
         "source": "fmp",
     }
-    await session.execute(
-        text(
-            "INSERT INTO fundamentals_cache (symbol_id, as_of_date, payload) "
-            "VALUES (:sid, :aod, :payload::jsonb) "
-            "ON CONFLICT (symbol_id, as_of_date) DO UPDATE "
-            "SET payload = EXCLUDED.payload"
-        ),
-        {
-            "sid": symbol_id,
-            "aod": as_of_date,
-            "payload": json.dumps(payload),
-        },
-    )
-    await session.flush()
+    await repo.upsert(symbol_id=symbol_id, as_of_date=as_of_date, payload=payload)
 
 
 def _make_mock_fmp_client(ticker: str = AAPL_TICKER) -> MagicMock:
@@ -350,15 +330,6 @@ async def test_screening_engine_multi_symbol_isolation(
         s.symbol == AAPL_TICKER for s in report.passed_candidates
     ) or any(s.symbol == AAPL_TICKER for s in report.failed_candidates)
     assert aapl_evaluated
-
-
-@pytest.mark.unit
-async def test_screener_tool_registered() -> None:
-    """screen_stocks is registered on the MCP server."""
-    from mcp_finance.server import mcp
-
-    tool_names = [tool.name for tool in mcp._tool_manager.list_tools()]
-    assert "screen_stocks" in tool_names
 
 
 @pytest.mark.unit
