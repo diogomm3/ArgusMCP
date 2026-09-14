@@ -259,6 +259,7 @@ async def test_service_cache_hit_does_not_call_fmp_or_quota(
     )
     result = await service.get_fundamentals("AAPL")
 
+    assert result is not None
     assert result.symbol == "AAPL"
     assert result.is_cached is True
     assert result.pe_ratio == Decimal("32.5")
@@ -318,6 +319,7 @@ async def test_service_cache_hit_even_when_quota_exhausted(
     )
     result = await service.get_fundamentals("MSFT")
 
+    assert result is not None
     assert result.symbol == "MSFT"
     assert result.is_cached is True
     mock_quota_guard.acquire.assert_not_called()
@@ -367,6 +369,7 @@ async def test_service_cache_miss_acquires_quota_and_persists(
     )
     result = await service.get_fundamentals("AAPL")
 
+    assert result is not None
     assert result.symbol == "AAPL"
     assert result.is_cached is False
     assert result.pe_ratio == Decimal("32.5")
@@ -517,6 +520,109 @@ async def test_service_429_marks_quota_exhausted_authoritatively(
 
     # Authoritative mark_exhausted was invoked
     mock_quota_guard.mark_exhausted.assert_called_once()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_service_allow_live_false_no_cache_returns_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When allow_live=False and cache is absent, returns None.
+
+    Must not acquire quota or make outbound FMP calls.
+    """
+    session = AsyncMock()
+
+    symbol_row = MagicMock()
+    symbol_row.id = 15
+
+    mock_sym_repo = AsyncMock()
+    mock_sym_repo.upsert = AsyncMock(return_value=symbol_row)
+
+    mock_fund_repo = AsyncMock()
+    mock_fund_repo.is_fresh = AsyncMock(return_value=False)
+    mock_fund_repo.get_latest = AsyncMock(return_value=None)
+
+    monkeypatch.setattr(
+        "mcp_finance.fundamentals.service.SymbolRepository",
+        lambda _s: mock_sym_repo,
+    )
+    monkeypatch.setattr(
+        "mcp_finance.fundamentals.service.FundamentalsRepository",
+        lambda _s: mock_fund_repo,
+    )
+
+    mock_client = AsyncMock()
+    mock_quota_guard = AsyncMock()
+
+    service = FundamentalsService(
+        session=session, client=mock_client, quota_guard=mock_quota_guard
+    )
+    result = await service.get_fundamentals("AAPL", allow_live=False)
+
+    assert result is None
+    mock_quota_guard.acquire.assert_not_called()
+    mock_client.get_company_profile.assert_not_called()
+    mock_client.get_ratios.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_service_allow_live_false_serves_stale_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When allow_live=False and cache is stale, serves stale record.
+
+    Must not acquire quota or make outbound FMP calls.
+    """
+    session = AsyncMock()
+
+    symbol_row = MagicMock()
+    symbol_row.id = 15
+
+    mock_sym_repo = AsyncMock()
+    mock_sym_repo.upsert = AsyncMock(return_value=symbol_row)
+
+    stale_record = MagicMock()
+    stale_record.as_of_date = datetime.date(2026, 1, 1)
+    stale_record.payload = {
+        "symbol": "AAPL",
+        "company_name": "Apple Inc.",
+        "exchange": "NASDAQ",
+        "currency": "USD",
+        "sector": "Technology",
+        "market_cap": 3000000000,
+        "pe_ratio": "28.5",
+    }
+
+    mock_fund_repo = AsyncMock()
+    mock_fund_repo.is_fresh = AsyncMock(return_value=False)
+    mock_fund_repo.get_latest = AsyncMock(return_value=stale_record)
+
+    monkeypatch.setattr(
+        "mcp_finance.fundamentals.service.SymbolRepository",
+        lambda _s: mock_sym_repo,
+    )
+    monkeypatch.setattr(
+        "mcp_finance.fundamentals.service.FundamentalsRepository",
+        lambda _s: mock_fund_repo,
+    )
+
+    mock_client = AsyncMock()
+    mock_quota_guard = AsyncMock()
+
+    service = FundamentalsService(
+        session=session, client=mock_client, quota_guard=mock_quota_guard
+    )
+    result = await service.get_fundamentals("AAPL", allow_live=False)
+
+    assert result is not None
+    assert result.symbol == "AAPL"
+    assert result.is_cached is True
+    assert result.as_of_date == datetime.date(2026, 1, 1)
+    mock_quota_guard.acquire.assert_not_called()
+    mock_client.get_company_profile.assert_not_called()
+    mock_client.get_ratios.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

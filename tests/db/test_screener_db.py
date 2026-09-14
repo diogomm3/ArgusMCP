@@ -225,10 +225,13 @@ async def test_screening_engine_allow_live_false_no_cache_returns_none(
     mock_client.get_company_profile.assert_not_called()
     mock_client.get_ratios.assert_not_called()
 
-    # Symbol should fail universe filter (fundamentals unavailable)
+    # Fails universe filter (fundamentals unavailable) gracefully, NOT an error
+    assert report.total_screened == 1
+    assert AAPL_TICKER not in report.errors
     assert report.passed_count == 0
     assert len(report.failed_candidates) == 1
     failed = report.failed_candidates[0]
+    assert failed.symbol == AAPL_TICKER
     assert "universe" in failed.failed_filters
     assert any("fundamentals unavailable" in r for r in failed.failure_reasons)
 
