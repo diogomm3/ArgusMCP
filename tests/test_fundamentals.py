@@ -376,7 +376,8 @@ async def test_service_cache_miss_acquires_quota_and_persists(
     mock_client.get_company_profile.assert_called_once_with("AAPL")
     mock_client.get_ratios.assert_called_once_with("AAPL")
     mock_fund_repo.upsert.assert_called_once()
-    session.commit.assert_called_once()
+    # FundamentalsService does not commit; the caller owns the transaction boundary
+    session.commit.assert_not_called()
 
 
 @pytest.mark.unit
