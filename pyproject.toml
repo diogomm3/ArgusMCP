@@ -16,6 +16,8 @@ dependencies = [
     "yfinance==1.7.0",
     "tenacity>=8.2,<10",
     "pandas>=2.0",
+    "matplotlib>=3.9",
+    "mplfinance>=0.12.10b0",
 ]
 
 [project.optional-dependencies]
