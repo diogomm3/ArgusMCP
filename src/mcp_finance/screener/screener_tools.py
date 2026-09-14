@@ -8,12 +8,12 @@ from mcp_finance.db.engine import get_session
 from mcp_finance.fundamentals.fmp import FMPClient
 from mcp_finance.fundamentals.service import FundamentalsService
 from mcp_finance.market_data.batch import DEFAULT_WATCHLIST
-from mcp_finance.screener.engine import ScreeningEngine
 from mcp_finance.screener.models import (
     ScreeningReport,
     ScreenStocksInput,
     StrategyConfig,
 )
+from mcp_finance.screener.screener import ScreeningEngine
 
 
 def register_screener_tools(mcp: MCPServer) -> None:

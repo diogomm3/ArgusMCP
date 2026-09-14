@@ -113,8 +113,14 @@ class StrategyConfig(BaseModel):
 class FilterResult(BaseModel):
     """Outcome of a single screening filter for one symbol."""
 
-    filter_name: str = Field(..., description="e.g. 'universe', 'volume', 'trend'")
-    passed: bool = Field(..., description="True if the symbol satisfied this filter.")
+    filter_name: str = Field(
+        ...,
+        description="Filter name, e.g. 'universe', 'volume', 'trend', or 'momentum'.",
+    )
+    passed: bool = Field(
+        ...,
+        description="True if the symbol satisfied this filter.",
+    )
     reason: str | None = Field(
         default=None,
         description=(
@@ -135,11 +141,20 @@ class ScreenedStock(BaseModel):
     a bug or configuration error.
     """
 
-    symbol: str = Field(..., description="Ticker symbol.")
-    as_of_date: datetime.date = Field(..., description="Screening date.")
+    symbol: str = Field(
+        ...,
+        description="Ticker symbol.",
+    )
+    as_of_date: datetime.date = Field(
+        ...,
+        description="Screening date.",
+    )
 
     # Pass/fail summary
-    passed: bool = Field(..., description="True if all active filters were satisfied.")
+    passed: bool = Field(
+        ...,
+        description="True if all active filters were satisfied.",
+    )
     failed_filters: list[str] = Field(
         default_factory=list,
         description="Names of filters the symbol did not satisfy.",
@@ -150,25 +165,60 @@ class ScreenedStock(BaseModel):
     )
 
     # Technical snapshot (from Candidate)
-    close: Decimal | None = Field(default=None, description="Close price.")
-    ema_20: Decimal | None = Field(default=None, description="EMA-20.")
-    ema_50: Decimal | None = Field(default=None, description="EMA-50.")
-    rsi_14: Decimal | None = Field(default=None, description="RSI-14.")
-    macd_line: Decimal | None = Field(default=None, description="MACD line.")
-    macd_signal: Decimal | None = Field(default=None, description="MACD signal.")
-    macd_histogram: Decimal | None = Field(default=None, description="MACD histogram.")
+    close: Decimal | None = Field(
+        default=None,
+        description="Close price on as_of_date.",
+    )
+    ema_20: Decimal | None = Field(
+        default=None,
+        description="EMA-20 value.",
+    )
+    ema_50: Decimal | None = Field(
+        default=None,
+        description="EMA-50 value.",
+    )
+    rsi_14: Decimal | None = Field(
+        default=None,
+        description="RSI-14 (Wilder) value.",
+    )
+    macd_line: Decimal | None = Field(
+        default=None,
+        description="MACD line (fast EMA - slow EMA).",
+    )
+    macd_signal: Decimal | None = Field(
+        default=None,
+        description="MACD signal line (EMA of MACD line).",
+    )
+    macd_histogram: Decimal | None = Field(
+        default=None,
+        description="MACD histogram (MACD line - signal line).",
+    )
     avg_volume_20: int | None = Field(
-        default=None, description="20-day average volume."
+        default=None,
+        description="20-day average volume in shares.",
     )
     bars_available: int = Field(
-        default=0, description="OHLCV bars used to compute indicators."
+        default=0,
+        description="OHLCV bars used to compute indicators.",
     )
 
     # Fundamental snapshot (from CompanyFundamentals, may be None)
-    company_name: str | None = Field(default=None)
-    sector: str | None = Field(default=None)
-    market_cap: int | None = Field(default=None)
-    pe_ratio: Decimal | None = Field(default=None)
+    company_name: str | None = Field(
+        default=None,
+        description="Company legal name from fundamentals.",
+    )
+    sector: str | None = Field(
+        default=None,
+        description="Economic sector.",
+    )
+    market_cap: int | None = Field(
+        default=None,
+        description="Market capitalisation in USD.",
+    )
+    pe_ratio: Decimal | None = Field(
+        default=None,
+        description="Trailing twelve-month (TTM) P/E ratio.",
+    )
     fundamentals_source: str | None = Field(
         default=None,
         description="'fmp' when fundamentals are available, None otherwise.",
@@ -181,11 +231,21 @@ class ScreeningReport(BaseModel):
     An empty passed_candidates list is a valid result — see ScreenedStock docstring.
     """
 
-    as_of_date: datetime.date = Field(..., description="Date on which screening ran.")
-    strategy_name: str = Field(..., description="Name from StrategyConfig.")
-    total_screened: int = Field(..., description="Total number of symbols evaluated.")
+    as_of_date: datetime.date = Field(
+        ...,
+        description="Date on which screening ran.",
+    )
+    strategy_name: str = Field(
+        ...,
+        description="Name from StrategyConfig.",
+    )
+    total_screened: int = Field(
+        ...,
+        description="Total number of symbols evaluated.",
+    )
     passed_count: int = Field(
-        ..., description="Number of symbols that passed all active filters."
+        ...,
+        description="Number of symbols that passed all active filters.",
     )
     passed_candidates: list[ScreenedStock] = Field(
         default_factory=list,

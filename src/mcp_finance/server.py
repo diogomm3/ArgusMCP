@@ -7,7 +7,7 @@ from mcp_finance.brokers.trading212_tools import register_trading212_tools
 from mcp_finance.fundamentals.fmp_tools import register_fmp_tools
 from mcp_finance.logger import configure_logging, get_logger
 from mcp_finance.market_data.yfinance_tools import register_yfinance_tools
-from mcp_finance.screener.tools import register_screener_tools
+from mcp_finance.screener.screener_tools import register_screener_tools
 
 configure_logging()
 logger = get_logger(__name__)

@@ -26,8 +26,8 @@ from mcp_finance.fundamentals.fmp import FMPClient
 from mcp_finance.fundamentals.models import CompanyProfile, FinancialRatios
 from mcp_finance.fundamentals.quota import DailyQuotaGuard
 from mcp_finance.fundamentals.service import FundamentalsService
-from mcp_finance.screener.engine import ScreeningEngine
 from mcp_finance.screener.models import StrategyConfig
+from mcp_finance.screener.screener import ScreeningEngine
 
 # ── Seed helpers ──────────────────────────────────────────────────────────────
 
