@@ -61,7 +61,12 @@ class FundamentalsService:
 
         symbol_repo = SymbolRepository(self._session)
         sym = await symbol_repo.upsert(ticker=clean_symbol, exchange=canonical_exchange)
-        assert sym.id is not None
+        if sym.id is None:
+            raise RuntimeError(
+                f"SymbolRepository.upsert returned a Symbol with id=None for "
+                f"'{clean_symbol}' on exchange '{canonical_exchange}'. "
+                "This indicates a DB trigger or sequence misconfiguration."
+            )
 
         fund_repo = FundamentalsRepository(self._session)
 
@@ -127,9 +132,11 @@ class FundamentalsService:
         )
 
         # 4. Only persist if BOTH endpoints succeeded
+        # NOTE: Do NOT call session.commit() here. The session's transaction
+        # boundary is managed by the caller (get_session() auto-commits on
+        # context exit; test fixtures use savepoints for per-test rollback).
         payload = fundamentals.model_dump(mode="json")
         await fund_repo.upsert(sym.id, today, payload)
-        await self._session.commit()
 
         logger.info(
             "Fundamentals successfully fetched and cached",

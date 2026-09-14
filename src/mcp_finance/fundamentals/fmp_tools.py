@@ -35,8 +35,12 @@ def register_FMP_tools(mcp: MCPServer) -> None:
                     allow_live=True,
                 )
                 # allow_live=True: service raises QuotaExhaustedError rather
-                # than returning None, so None is unreachable here.
-                assert result is not None, (
-                    "Unexpected None from get_fundamentals with allow_live=True"
-                )
+                # than returning None, so None is unreachable here. If it is
+                # ever None, that is a programming error in service.py.
+                if result is None:
+                    raise RuntimeError(
+                        "get_fundamentals returned None with allow_live=True; "
+                        "expected QuotaExhaustedError to be raised instead. "
+                        "This is a bug in FundamentalsService."
+                    )
                 return result
