@@ -14,14 +14,19 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mcp_finance.brokers import BrokerClient
-from mcp_finance.brokers.models import Position
+from mcp_finance.brokers.models import OrderResult, Position
 from mcp_finance.brokers.utils import get_trading212_client
 from mcp_finance.db.engine import get_session
 from mcp_finance.db.models import FundamentalsCache, Symbol
 from mcp_finance.logger import get_logger
+from mcp_finance.risk.audit import AuditService
 from mcp_finance.risk.engine import RiskEngine
 from mcp_finance.risk.models import (
+    AuditStatus,
     EvaluateTradeInput,
+    OrderSide,
+    PlaceOrderInput,
+    PlaceOrderOutput,
     ProposedTrade,
     RiskConfig,
     RiskDecision,
@@ -29,11 +34,6 @@ from mcp_finance.risk.models import (
 from mcp_finance.risk.rules import canonical_ticker_symbol
 
 logger = get_logger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Read-only Helpers
-# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +204,185 @@ async def evaluate_trade_handler(
 
 
 # ---------------------------------------------------------------------------
+# Order Placement Execution Logic
+# ---------------------------------------------------------------------------
+
+
+def assert_trade_approved_invariant(decision: RiskDecision) -> None:
+    """Re-assert hard execution invariants before any order dispatch.
+
+    Defense-in-depth safety: must hold true even if evaluate_trade was somehow
+    bypassed or corrupted. Raises RuntimeError if violated.
+    """
+    if not decision.approved:
+        raise RuntimeError(
+            "Defense-in-depth violation: attempt to place an unapproved order."
+        )
+    if decision.quantity <= Decimal("0"):
+        raise RuntimeError(
+            f"Defense-in-depth violation: non-positive execution quantity "
+            f"({decision.quantity})."
+        )
+    if decision.rejection_reasons:
+        raise RuntimeError(
+            f"Defense-in-depth violation: order carries rejection reasons: "
+            f"{decision.rejection_reasons}"
+        )
+    if decision.side != OrderSide.BUY:
+        raise RuntimeError(
+            f"Defense-in-depth violation: unsupported order side {decision.side}."
+        )
+
+
+def to_broker_ticker(symbol: str) -> str:
+    """Resolve symbol to broker ticker format (defaulting to _US_EQ)."""
+    s = symbol.strip().upper()
+    if "_" in s:
+        return s
+    if s.endswith(".US"):
+        return f"{s[:-3]}_US_EQ"
+    if s.endswith(".DE"):
+        return f"{s[:-3]}_DE_EQ"
+    return f"{s}_US_EQ"
+
+
+async def place_order_handler(
+    input: PlaceOrderInput,
+    *,
+    broker_client: BrokerClient | None = None,
+    session: AsyncSession | None = None,
+    audit_service: AuditService | None = None,
+    engine: RiskEngine | None = None,
+    config: RiskConfig | None = None,
+    today: datetime.date | None = None,
+) -> PlaceOrderOutput:
+    """Submit a real BUY order through the risk engine execution gate.
+
+    Lifecycle:
+      1. Run full RiskEngine evaluation via evaluate_trade_handler (dry-run rules).
+      2. If REJECTED:
+         - Persist a REJECTED audit row to Postgres via AuditService.
+         - Return PlaceOrderOutput(success=False, ...) immediately.
+         - Never contact broker.
+      3. If APPROVED:
+         - Re-assert defense-in-depth invariant (assert_trade_approved_invariant).
+         - Persist pre-dispatch SUBMITTING audit row to Postgres via AuditService.
+         - Call broker place_order.
+         - If broker fails: update audit row to FAILED with error payload, re-raise.
+         - If broker succeeds: update audit row to ACCEPTED with broker_order_id.
+         - Return PlaceOrderOutput(success=True, ...).
+    """
+    resolved_audit = audit_service or AuditService()
+
+    eval_input = EvaluateTradeInput(
+        symbol=input.symbol,
+        entry_price=input.entry_price,
+        stop_loss_price=input.stop_loss_price,
+        quantity=input.quantity,
+        side=OrderSide.BUY,
+        order_type=input.order_type,
+        limit_price=input.limit_price,
+        sector=input.sector,
+        next_earnings_date=input.next_earnings_date,
+    )
+
+    decision = await evaluate_trade_handler(
+        eval_input,
+        broker_client=broker_client,
+        session=session,
+        engine=engine,
+        config=config,
+        today=today,
+    )
+
+    # Rejection gate
+    if not decision.approved:
+        audit_id = await resolved_audit.log_rejection(decision)
+        logger.warning(
+            "Order rejected by risk engine",
+            symbol=decision.symbol,
+            audit_id=audit_id,
+            rejections=decision.rejection_reasons,
+        )
+        return PlaceOrderOutput(
+            success=False,
+            decision=decision,
+            audit_id=audit_id,
+            broker_order_id=None,
+            order_result=None,
+            error_message=(
+                f"Order rejected by risk engine: "
+                f"{'; '.join(decision.rejection_reasons)}"
+            ),
+        )
+
+    # Invariant assertion
+    assert_trade_approved_invariant(decision)
+
+    # Phase 1: Pre-dispatch audit logging (SUBMITTING)
+    audit_id = await resolved_audit.log_pre_dispatch(decision)
+
+    # Phase 2: Broker dispatch
+    broker_ticker = to_broker_ticker(input.symbol)
+    order_result: OrderResult | None = None
+    try:
+        if broker_client is not None:
+            order_result = await broker_client.place_order(
+                ticker=broker_ticker,
+                quantity=decision.quantity,
+                order_type=decision.order_type.value,
+                limit_price=input.limit_price,
+            )
+        else:
+            async with get_trading212_client() as client:
+                order_result = await client.place_order(
+                    ticker=broker_ticker,
+                    quantity=decision.quantity,
+                    order_type=decision.order_type.value,
+                    limit_price=input.limit_price,
+                )
+    except Exception as exc:
+        logger.error(
+            "Broker order placement failed; recording FAILED audit status",
+            symbol=broker_ticker,
+            audit_id=audit_id,
+            error=str(exc),
+        )
+        await resolved_audit.log_post_dispatch(
+            audit_id=audit_id,
+            status=AuditStatus.FAILED,
+            broker_order_id=None,
+            raw_response={"error": str(exc), "error_type": type(exc).__name__},
+        )
+        raise
+
+    # Phase 3: Post-dispatch success update (ACCEPTED)
+    await resolved_audit.log_post_dispatch(
+        audit_id=audit_id,
+        status=AuditStatus.ACCEPTED,
+        broker_order_id=order_result.id,
+        raw_response=order_result.model_dump(mode="json"),
+    )
+
+    logger.info(
+        "Order successfully placed and accepted by broker",
+        symbol=broker_ticker,
+        audit_id=audit_id,
+        broker_order_id=order_result.id,
+        quantity=str(decision.quantity),
+    )
+
+    return PlaceOrderOutput(
+        success=True,
+        decision=decision,
+        audit_id=audit_id,
+        broker_order_id=order_result.id,
+        order_result=order_result,
+        error_message=None,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tool Registration
 # ---------------------------------------------------------------------------
 
@@ -248,3 +427,28 @@ def register_risk_tools(mcp: MCPServer) -> None:
             breakdowns, individual rule results, and rejection reasons.
         """
         return await evaluate_trade_handler(input)
+
+    @mcp.tool()
+    async def place_order(input: PlaceOrderInput) -> PlaceOrderOutput:
+        """Submit a BUY order to the broker, strictly gated by the risk engine.
+
+        Full execution lifecycle:
+          1. Evaluates all Phase 9 portfolio risk rules and sizes position.
+          2. If rejected: logs REJECTED audit row, returns failure, NEVER touches
+             the broker.
+          3. If approved:
+             - Re-asserts hard defense-in-depth invariant.
+             - Logs pre-dispatch SUBMITTING audit row.
+             - Dispatches BUY order to Trading212 (demo environment only).
+             - On broker failure: logs FAILED audit row and surfaces error.
+             - On broker success: logs ACCEPTED audit row with broker_order_id.
+
+        Args:
+            input: Order candidate details (symbol, entry price, stop-loss price,
+                   optional quantity, limit price, sector, next earnings date).
+
+        Returns:
+            PlaceOrderOutput with success status, RiskDecision, audit_id, and
+            broker_order_id.
+        """
+        return await place_order_handler(input)
