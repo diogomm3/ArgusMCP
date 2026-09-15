@@ -38,6 +38,7 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 _BROKER_SUFFIXES: tuple[str, ...] = (
     "_US_EQ",
+    "_CA_EQ",
     "_DE_EQ",
     "_UK_EQ",
     "_FR_EQ",
@@ -49,10 +50,13 @@ _BROKER_SUFFIXES: tuple[str, ...] = (
     "_AT_EQ",
     "_BE_EQ",
     "_PT_EQ",
+    "_BB_EQ",
     "_FI_EQ",
     "_IE_EQ",
     "_DK_EQ",
     "_NO_EQ",
+    "_WAR_FR_EQ",
+    "_WAR_US_EQ",
     "_EQ",
     ".US",
     ".DE",
@@ -71,29 +75,46 @@ _SUFFIX_PATTERN = re.compile(
 def canonical_ticker_symbol(ticker: str) -> str:
     """Strip broker exchange/asset-class suffixes from *ticker*.
 
-    Returns the root symbol in upper-case.  Examples::
+    Returns the canonical symbol in upper-case.  Examples::
 
         canonical_ticker_symbol("AAPL_US_EQ")  → "AAPL"
         canonical_ticker_symbol("SAP_DE_EQ")   → "SAP"
         canonical_ticker_symbol("SAPd_EQ")     → "SAP"   (T212 lowercase country code)
+        canonical_ticker_symbol("ASMLa_EQ")    → "ASML"  (T212 Euronext Amsterdam)
+        canonical_ticker_symbol("IFXd_EQ")     → "IFX"   (T212 XETRA Germany)
+        canonical_ticker_symbol("BRK_B_US_EQ") → "BRK.B" (Preserves share class)
+        canonical_ticker_symbol("BRK/A_US_EQ") → "BRK.A" (Preserves share class)
         canonical_ticker_symbol("LLOY_UK_EQ")  → "LLOY"
         canonical_ticker_symbol("AAPL")        → "AAPL"  (already canonical)
 
-    Trading212 occasionally appends a single *lowercase* letter to the root
-    ticker before the exchange suffix as a country/market discriminator
-    (e.g. ``SAPd_EQ`` where ``d`` denotes XETRA).  After stripping the suffix,
-    if the result ends in a single lowercase letter preceded by at least two
-    uppercase letters, that trailing lowercase letter is also stripped.
+    Trading212 appends a single *lowercase* letter to the root ticker before
+    the exchange suffix as a country/market discriminator (e.g. ``SAPd_EQ``,
+    ``ASMLa_EQ``, ``IFXd_EQ``).  After stripping the suffix, if the result
+    ends in a single lowercase letter preceded by at least two uppercase letters,
+    that trailing lowercase letter is also stripped.
 
-    If no known suffix is detected the original ticker is returned in
-    upper-case so that callers always receive a consistent-case string.
+    Share-class letters (e.g. ``BRK/A``, ``BRK_B``, ``BRK-B``) are normalized
+    to dot notation (``BRK.A``, ``BRK.B``) and explicitly preserved so that
+    different share classes are never collapsed into each other.
     """
     stripped = _SUFFIX_PATTERN.sub("", ticker).strip()
     # Remove a trailing Trading212 country-discriminator lowercase letter, e.g.
-    # "SAPd" → "SAP".  Only strip when the string ends with [A-Z]{2,}[a-z]{1}.
+    # "SAPd" → "SAP", "ASMLa" → "ASML", "IFXd" → "IFX".
     stripped = re.sub(r"^([A-Z]{2,})[a-z]$", r"\1", stripped)
+    # Standardize share-class notation (e.g. BRK_B, BRK/A, BRK-B -> BRK.B)
+    stripped = re.sub(r"^([A-Z]+)[/_ -]([A-Z])$", r"\1.\2", stripped)
     stripped = stripped.upper()
     return stripped if stripped else ticker.upper()
+
+
+def _extract_root_and_class(symbol: str) -> tuple[str, str | None]:
+    """Split canonical or broker ticker into base root and share class."""
+    canon = canonical_ticker_symbol(symbol)
+    m = re.match(r"^([A-Z0-9]+)\.([A-Z])$", canon)
+    if m:
+        return m.group(1), m.group(2)
+    parts = re.split(r"[_./-]", canon)
+    return parts[0], None
 
 
 # ---------------------------------------------------------------------------
@@ -214,14 +235,30 @@ def check_duplicate_position(
     """Fail if the portfolio already holds a non-zero position in *symbol*.
 
     Comparison is performed on *canonicalised* tickers so that
-    ``AAPL`` matches ``AAPL_US_EQ`` and ``SAP`` matches ``SAP_DE_EQ``.
+    ``AAPL`` matches ``AAPL_US_EQ``, ``ASML`` matches ``ASMLa_EQ``, and
+    ``SAP`` matches ``SAP_DE_EQ`` / ``SAPd_EQ``.
     A position with ``quantity == 0`` is treated as closed and does not block.
+
+    Fail-Closed Guarantee
+    ─────────────────────
+    If an open position's ticker contains an unrecognized broker suffix pattern
+    (i.e. not in the known catalog) but its instrument root matches the target
+    symbol's root, this rule fails closed (returns ``passed=False``) to prevent
+    buying into an existing holding due to normalization misses.
+    Explicitly different share classes (e.g. BRK.A vs BRK.B) are distinguished
+    and not blocked.
     """
     canonical_target = canonical_ticker_symbol(symbol)
+    target_root, target_class = _extract_root_and_class(symbol)
+
     for pos in current_positions:
-        if canonical_ticker_symbol(
-            pos.ticker
-        ) == canonical_target and pos.quantity > Decimal("0"):
+        if pos.quantity <= Decimal("0"):
+            continue
+
+        canonical_pos = canonical_ticker_symbol(pos.ticker)
+
+        # 1. Exact canonical match
+        if canonical_pos == canonical_target:
             return RuleResult(
                 rule_name="check_duplicate_position",
                 passed=False,
@@ -235,6 +272,34 @@ def check_duplicate_position(
                     "held_quantity": str(pos.quantity),
                 },
             )
+
+        # 2. Fail-closed fallback: unrecognized suffix on an open position that
+        # shares the target symbol's root instrument.
+        pos_root, pos_class = _extract_root_and_class(pos.ticker)
+        if pos_root == target_root:
+            if (
+                target_class is not None
+                and pos_class is not None
+                and target_class != pos_class
+            ):
+                continue
+            return RuleResult(
+                rule_name="check_duplicate_position",
+                passed=False,
+                reason=(
+                    f"Duplicate position check failed closed: open position "
+                    f"{pos.ticker!r} has unrecognized suffix but matches symbol "
+                    f"root {target_root!r}."
+                ),
+                details={
+                    "canonical_symbol": canonical_target,
+                    "broker_ticker": pos.ticker,
+                    "target_root": target_root,
+                    "held_quantity": str(pos.quantity),
+                    "fail_closed": True,
+                },
+            )
+
     return RuleResult(
         rule_name="check_duplicate_position",
         passed=True,

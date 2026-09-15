@@ -16,7 +16,6 @@ trivially testable with pure in-memory fixtures.
 
 from __future__ import annotations
 
-import asyncio
 import datetime
 from decimal import Decimal
 
@@ -54,7 +53,7 @@ class RiskEngine:
     def __init__(self, config: RiskConfig | None = None) -> None:
         self._config = config or RiskConfig()
 
-    async def evaluate_trade(
+    def evaluate_trade(
         self,
         proposed: ProposedTrade,
         account: AccountSummary,
@@ -65,6 +64,9 @@ class RiskEngine:
         today: datetime.date | None = None,
     ) -> RiskDecision:
         """Evaluate *proposed* against the complete rule suite.
+
+        Pure synchronous evaluation running Decimal arithmetic over the rule
+        suite. No I/O or blocking operations.
 
         Parameters
         ----------
@@ -89,34 +91,8 @@ class RiskEngine:
         RiskDecision
             ``approved`` is True only if every rule passed and quantity > 0.
         """
-        # Heavy synchronous work (pure math, no I/O) runs in a thread pool
-        # to avoid blocking the event loop in case sizing arithmetic is slow
-        # on unusual Decimal scales.  In practice this is fast, but the
-        # pattern keeps Phase 9 consistent with the asyncio.to_thread approach
-        # established in Phase 4.
-        return await asyncio.to_thread(
-            self._evaluate_sync,
-            proposed,
-            account,
-            positions,
-            sector_exposures or {},
-            daily_loss,
-            today or datetime.date.today(),
-        )
-
-    # ------------------------------------------------------------------
-    # Private synchronous core (runs in thread pool via asyncio.to_thread)
-    # ------------------------------------------------------------------
-
-    def _evaluate_sync(
-        self,
-        proposed: ProposedTrade,
-        account: AccountSummary,
-        positions: list[Position],
-        sector_exposures: dict[str, Decimal],
-        daily_loss: Decimal,
-        today: datetime.date,
-    ) -> RiskDecision:
+        ref_today = today or datetime.date.today()
+        sectors = sector_exposures or {}
         rule_results: list[RuleResult] = []
 
         # ── Rule 0: Order-side gate ────────────────────────────────────────
@@ -136,7 +112,9 @@ class RiskEngine:
         rule_results.append(r_dl)
 
         # ── Rule 7: Earnings blackout ──────────────────────────────────────
-        r_eb = check_earnings_blackout(proposed.next_earnings_date, today, self._config)
+        r_eb = check_earnings_blackout(
+            proposed.next_earnings_date, ref_today, self._config
+        )
         rule_results.append(r_eb)
 
         # ── Position sizing ────────────────────────────────────────────────
@@ -192,7 +170,7 @@ class RiskEngine:
 
         # ── Rule 5: Max sector exposure ────────────────────────────────────
         current_sector_cost = (
-            sector_exposures.get(proposed.sector, Decimal("0"))
+            sectors.get(proposed.sector, Decimal("0"))
             if proposed.sector
             else Decimal("0")
         )

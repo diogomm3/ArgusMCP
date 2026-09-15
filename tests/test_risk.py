@@ -86,8 +86,12 @@ def _config(**overrides: object) -> RiskConfig:
 
 
 class TestTickerNormalisation:
+    # ── Fixtures from real T212 demo get_positions() output ─────────────────
     def test_us_suffix(self) -> None:
+        # Real demo: AAPL_US_EQ, NVDA_US_EQ, TSLA_US_EQ, MSFT_US_EQ, ...
         assert canonical_ticker_symbol("AAPL_US_EQ") == "AAPL"
+        assert canonical_ticker_symbol("NVDA_US_EQ") == "NVDA"
+        assert canonical_ticker_symbol("TSLA_US_EQ") == "TSLA"
 
     def test_german_suffix(self) -> None:
         assert canonical_ticker_symbol("SAP_DE_EQ") == "SAP"
@@ -96,13 +100,38 @@ class TestTickerNormalisation:
         assert canonical_ticker_symbol("LLOY_UK_EQ") == "LLOY"
 
     def test_bare_eq_suffix(self) -> None:
-        # European tickers sometimes appear with only _EQ
+        # European tickers sometimes appear with only _EQ (no country code)
         assert canonical_ticker_symbol("VOD_EQ") == "VOD"
 
-    def test_mixed_case_european(self) -> None:
-        # SAPd_EQ → SAP  (lowercase 'd' is part of the Trading212 tick format)
+    # ── T212 lowercase country-discriminator format (from real catalog) ──────
+    def test_t212_euronext_amsterdam_discriminator(self) -> None:
+        # Real T212 catalog: ASMLa_EQ = ASML on Euronext Amsterdam
+        assert canonical_ticker_symbol("ASMLa_EQ") == "ASML"
+
+    def test_t212_xetra_discriminator(self) -> None:
+        # Real T212 catalog: IFXd_EQ = Infineon on XETRA (Germany)
+        assert canonical_ticker_symbol("IFXd_EQ") == "IFX"
+
+    def test_t212_xetra_discriminator_sap(self) -> None:
+        # SAPd_EQ — SAP on XETRA with Trading212 lowercase discriminator
         assert canonical_ticker_symbol("SAPd_EQ") == "SAP"
 
+    # ── Share class preservation ─────────────────────────────────────────────
+    def test_share_class_slash_notation(self) -> None:
+        # Real T212 catalog: BRK/A_US_EQ = Berkshire Hathaway Class A
+        assert canonical_ticker_symbol("BRK/A_US_EQ") == "BRK.A"
+
+    def test_share_class_underscore_notation(self) -> None:
+        # Real T212 catalog: BRK_B_US_EQ = Berkshire Hathaway Class B
+        assert canonical_ticker_symbol("BRK_B_US_EQ") == "BRK.B"
+
+    def test_share_class_a_and_b_are_distinct(self) -> None:
+        # Critical: BRK.A and BRK.B must NOT normalize to the same symbol
+        assert canonical_ticker_symbol("BRK/A_US_EQ") != canonical_ticker_symbol(
+            "BRK_B_US_EQ"
+        )
+
+    # ── Passthrough and normalization ────────────────────────────────────────
     def test_already_canonical(self) -> None:
         assert canonical_ticker_symbol("AAPL") == "AAPL"
 
@@ -224,12 +253,63 @@ class TestDuplicatePositionRule:
         result = check_duplicate_position("SAP", [_position("SAP_DE_EQ")])
         assert not result.passed
 
+    def test_t212_lowercase_discriminator_match_fails(self) -> None:
+        # Real T212 catalog: ASMLa_EQ — ASML on Euronext Amsterdam
+        result = check_duplicate_position("ASML", [_position("ASMLa_EQ")])
+        assert not result.passed
+
+    def test_t212_xetra_discriminator_match_fails(self) -> None:
+        # Real T212 catalog: IFXd_EQ — Infineon on XETRA
+        result = check_duplicate_position("IFX", [_position("IFXd_EQ")])
+        assert not result.passed
+
     def test_zero_quantity_is_closed_and_passes(self) -> None:
         result = check_duplicate_position("AAPL", [_position("AAPL_US_EQ", "0")])
         assert result.passed
 
     def test_different_symbol_passes(self) -> None:
         result = check_duplicate_position("MSFT", [_position("AAPL_US_EQ")])
+        assert result.passed
+
+    # ── Share class isolation ────────────────────────────────────────────────
+    def test_brk_b_held_blocks_new_brk_b(self) -> None:
+        # Holding BRK_B_US_EQ should block buying BRK.B
+        result = check_duplicate_position("BRK.B", [_position("BRK_B_US_EQ")])
+        assert not result.passed
+
+    def test_brk_a_does_not_block_brk_b(self) -> None:
+        # Holding BRK/A_US_EQ (Class A) must NOT block buying Class B
+        result = check_duplicate_position("BRK.B", [_position("BRK/A_US_EQ")])
+        assert result.passed, (
+            "BRK.A and BRK.B are distinct instruments; holding one must not "
+            "block purchasing the other"
+        )
+
+    # ── Fail-closed guarantee on unrecognized suffixes ───────────────────────
+    def test_unrecognized_suffix_same_root_is_blocked(self) -> None:
+        """Core fail-closed guarantee.
+
+        If a held position has an unrecognized broker suffix but its root symbol
+        matches the target, the check MUST fail closed (reject the trade) rather
+        than silently pass — the safe direction when the normalizer has a gap.
+        """
+        result = check_duplicate_position(
+            "AAPL",
+            [_position("AAPL_MYSTERY_EXCHANGE")],
+        )
+        assert not result.passed, (
+            "check_duplicate_position must fail closed when ticker suffix is "
+            "unrecognized but root symbol matches: got passed=True which would "
+            "allow buying into an existing position"
+        )
+        assert result.details.get("fail_closed") is True
+
+    def test_unrecognized_suffix_different_root_passes(self) -> None:
+        # An unrecognized suffix for a completely different stock must not block
+        result = check_duplicate_position(
+            "MSFT",
+            [_position("AAPL_MYSTERY_EXCHANGE")],
+        )
         assert result.passed
 
 
@@ -536,8 +616,7 @@ class TestPositionSizingCalculator:
 
 
 class TestRiskEngineOrchestration:
-    @pytest.mark.asyncio
-    async def test_all_rules_pass_yields_approved(self) -> None:
+    def test_all_rules_pass_yields_approved(self) -> None:
         """Well-configured trade with plenty of headroom should be approved."""
         engine = RiskEngine()
         proposed = ProposedTrade(
@@ -548,7 +627,7 @@ class TestRiskEngineOrchestration:
             sector="Technology",
         )
         account = _account(total="100000", cash="50000", invested="20000")
-        decision = await engine.evaluate_trade(
+        decision = engine.evaluate_trade(
             proposed,
             account,
             positions=[],
@@ -569,8 +648,7 @@ class TestRiskEngineOrchestration:
         assert "check_max_portfolio_exposure" in rule_names
         assert "check_max_sector_exposure" in rule_names
 
-    @pytest.mark.asyncio
-    async def test_multi_failure_accumulates_all_reasons(self) -> None:
+    def test_multi_failure_accumulates_all_reasons(self) -> None:
         """Multiple failing rules should all appear in rejection_reasons."""
         engine = RiskEngine()
         proposed = ProposedTrade(
@@ -582,7 +660,7 @@ class TestRiskEngineOrchestration:
             next_earnings_date=datetime.date.today(),  # Rule 7 fail: today
         )
         account = _account(total="100000", cash="50000", invested="89500")
-        decision = await engine.evaluate_trade(
+        decision = engine.evaluate_trade(
             proposed,
             account,
             positions=[_position("AAPL_US_EQ")],  # Rule 2 fail: duplicate
@@ -594,8 +672,7 @@ class TestRiskEngineOrchestration:
         assert len(decision.rejection_reasons) >= 3
         assert "stop-loss" in reasons_text.lower()
 
-    @pytest.mark.asyncio
-    async def test_sell_order_rejected_by_engine(self) -> None:
+    def test_sell_order_rejected_by_engine(self) -> None:
         engine = RiskEngine()
         proposed = ProposedTrade(
             symbol="AAPL",
@@ -604,12 +681,11 @@ class TestRiskEngineOrchestration:
             stop_loss_price=Decimal("95"),
         )
         account = _account()
-        decision = await engine.evaluate_trade(proposed, account, positions=[])
+        decision = engine.evaluate_trade(proposed, account, positions=[])
         assert not decision.approved
         assert any("SELL" in r for r in decision.rejection_reasons)
 
-    @pytest.mark.asyncio
-    async def test_explicit_quantity_bypasses_auto_sizer(self) -> None:
+    def test_explicit_quantity_bypasses_auto_sizer(self) -> None:
         engine = RiskEngine()
         proposed = ProposedTrade(
             symbol="MSFT",
@@ -619,12 +695,11 @@ class TestRiskEngineOrchestration:
             quantity=Decimal("3"),  # explicit
         )
         account = _account(total="100000", cash="50000", invested="10000")
-        decision = await engine.evaluate_trade(proposed, account, positions=[])
+        decision = engine.evaluate_trade(proposed, account, positions=[])
         assert decision.approved
         assert decision.quantity == Decimal("3")
 
-    @pytest.mark.asyncio
-    async def test_zero_sized_quantity_is_rejected(self) -> None:
+    def test_zero_sized_quantity_is_rejected(self) -> None:
         """If sizing produces zero shares, the trade must be rejected."""
         engine = RiskEngine()
         proposed = ProposedTrade(
@@ -635,12 +710,11 @@ class TestRiskEngineOrchestration:
         )
         # Only £10 cash → floor(10/100) = 0 shares → rejected
         account = _account(total="100000", cash="10", invested="10000")
-        decision = await engine.evaluate_trade(proposed, account, positions=[])
+        decision = engine.evaluate_trade(proposed, account, positions=[])
         assert not decision.approved
         assert decision.quantity == Decimal("0")
 
-    @pytest.mark.asyncio
-    async def test_today_defaults_to_date_today(self) -> None:
+    def test_today_defaults_to_date_today(self) -> None:
         """Calling evaluate_trade without `today` should not raise."""
         engine = RiskEngine()
         proposed = ProposedTrade(
@@ -651,7 +725,7 @@ class TestRiskEngineOrchestration:
         )
         account = _account()
         # Should not raise even without `today` kwarg
-        decision = await engine.evaluate_trade(proposed, account, positions=[])
+        decision = engine.evaluate_trade(proposed, account, positions=[])
         # Approved-or-not doesn't matter; we just check it ran without error
         assert isinstance(decision.approved, bool)
 
