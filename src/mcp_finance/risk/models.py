@@ -12,6 +12,8 @@ from enum import Enum
 
 from pydantic import BaseModel, Field
 
+from mcp_finance.brokers.models import OrderResult
+
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
@@ -210,6 +212,55 @@ class EvaluateTradeInput(BaseModel):
     )
 
 
+class PlaceOrderInput(BaseModel):
+    """Input payload for placing a candidate order gated by the risk engine."""
+
+    symbol: str = Field(
+        ...,
+        description=(
+            "Canonical or broker-formatted ticker symbol "
+            "(e.g. 'AAPL', 'AAPL_US_EQ', 'SAP_DE_EQ')."
+        ),
+    )
+    entry_price: Decimal = Field(
+        ...,
+        description="Intended entry price per share.",
+    )
+    stop_loss_price: Decimal = Field(
+        ...,
+        description="Maximum acceptable loss price per share (stop-loss trigger).",
+    )
+    quantity: Decimal | None = Field(
+        default=None,
+        description=(
+            "Explicit share count. If omitted or None, the engine auto-sizes "
+            "the position via fixed-fractional risk budgeting."
+        ),
+    )
+    order_type: OrderType = Field(
+        default=OrderType.MARKET,
+        description="Execution type ('MARKET' or 'LIMIT').",
+    )
+    limit_price: Decimal | None = Field(
+        default=None,
+        description="Limit price per share (required when order_type is 'LIMIT').",
+    )
+    sector: str | None = Field(
+        default=None,
+        description=(
+            "GICS/ICB sector label. If omitted, attempts to auto-populate "
+            "from local fundamentals cache; if not cached, sector check is skipped."
+        ),
+    )
+    next_earnings_date: datetime.date | None = Field(
+        default=None,
+        description=(
+            "Next scheduled earnings release date (YYYY-MM-DD). If omitted, the "
+            "earnings blackout check is skipped (caller-supplied only in Phase 9)."
+        ),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Outputs
 # ---------------------------------------------------------------------------
@@ -311,4 +362,37 @@ class RiskDecision(BaseModel):
     rejection_reasons: list[str] = Field(
         default_factory=list,
         description="List of failure reasons (empty if approved).",
+    )
+
+
+class PlaceOrderOutput(BaseModel):
+    """Structured response from the place_order execution tool."""
+
+    success: bool = Field(
+        ...,
+        description=(
+            "True if order was accepted by broker; False if rejected or failed."
+        ),
+    )
+    decision: RiskDecision = Field(
+        ...,
+        description="Full RiskDecision produced by the risk engine evaluation.",
+    )
+    audit_id: int | None = Field(
+        default=None,
+        description="Primary key of the persistent order_audit_logs record.",
+    )
+    broker_order_id: str | None = Field(
+        default=None,
+        description=(
+            "Broker-assigned order ID (None if rejected or failed pre-dispatch)."
+        ),
+    )
+    order_result: OrderResult | None = Field(
+        default=None,
+        description="Raw order confirmation details returned by the broker.",
+    )
+    error_message: str | None = Field(
+        default=None,
+        description="Rejection or execution failure explanation.",
     )
