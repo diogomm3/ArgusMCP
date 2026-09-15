@@ -57,3 +57,23 @@ class AccountSummary(BaseModel):
         default="GBP",
         description="Account base currency",
     )
+
+
+class OrderResult(BaseModel):
+    """Response from a successful broker order submission."""
+
+    id: str = Field(..., description="Broker-assigned order identifier.")
+    status: str = Field(..., description="Order status as returned by broker.")
+    ticker: str = Field(..., description="Instrument ticker symbol.")
+    quantity: Decimal = Field(..., description="Ordered quantity.")
+    filled_quantity: Decimal = Field(
+        default=Decimal("0"),
+        description="Quantity filled so far (may be 0 for pending market orders).",
+    )
+    order_type: str = Field(..., description="MARKET or LIMIT.")
+    created_at: str | None = Field(
+        default=None, description="ISO-8601 creation timestamp."
+    )
+    limit_price: Decimal | None = Field(
+        default=None, description="Limit price (for LIMIT orders)."
+    )
