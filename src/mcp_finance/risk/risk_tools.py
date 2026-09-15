@@ -10,7 +10,6 @@ import datetime
 from decimal import Decimal
 
 from mcp.server.mcpserver import MCPServer
-from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,8 +21,7 @@ from mcp_finance.db.models import FundamentalsCache, Symbol
 from mcp_finance.logger import get_logger
 from mcp_finance.risk.engine import RiskEngine
 from mcp_finance.risk.models import (
-    OrderSide,
-    OrderType,
+    EvaluateTradeInput,
     ProposedTrade,
     RiskConfig,
     RiskDecision,
@@ -34,63 +32,8 @@ logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Tool Input Schemas
+# Read-only Helpers
 # ---------------------------------------------------------------------------
-
-
-class EvaluateTradeInput(BaseModel):
-    """Input payload for candidate trade dry-run evaluation."""
-
-    symbol: str = Field(
-        ...,
-        description=(
-            "Canonical or broker-formatted ticker symbol "
-            "(e.g. 'AAPL', 'AAPL_US_EQ', 'SAP_DE_EQ')."
-        ),
-    )
-    entry_price: Decimal = Field(
-        ...,
-        description="Intended entry price per share.",
-    )
-    stop_loss_price: Decimal = Field(
-        ...,
-        description="Maximum acceptable loss price per share (stop-loss trigger).",
-    )
-    quantity: Decimal | None = Field(
-        default=None,
-        description=(
-            "Explicit share count. If omitted or None, the engine auto-sizes "
-            "the position via fixed-fractional risk budgeting."
-        ),
-    )
-    side: OrderSide = Field(
-        default=OrderSide.BUY,
-        description="Order direction (Phase 9 only supports BUY).",
-    )
-    order_type: OrderType = Field(
-        default=OrderType.MARKET,
-        description="Execution type ('MARKET' or 'LIMIT').",
-    )
-    limit_price: Decimal | None = Field(
-        default=None,
-        description="Limit price per share (required when order_type is 'LIMIT').",
-    )
-    sector: str | None = Field(
-        default=None,
-        description=(
-            "GICS/ICB sector label. If omitted, the tool attempts to auto-populate "
-            "from the local fundamentals cache if available; if not cached, "
-            "the sector concentration check is skipped."
-        ),
-    )
-    next_earnings_date: datetime.date | None = Field(
-        default=None,
-        description=(
-            "Next scheduled earnings release date (YYYY-MM-DD). If omitted, the "
-            "earnings blackout check is skipped (earnings calendar lookup is "
-            "caller-supplied only in Phase 9)."
-        ),
-    )
 
 
 # ---------------------------------------------------------------------------
