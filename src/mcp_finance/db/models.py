@@ -1,10 +1,12 @@
 """SQLAlchemy 2.0 ORM models for the finance MCP persistence layer.
 
-Three tables:
-  - symbols          — master instrument list (ticker + exchange unique)
-  - ohlcv_daily      — daily OHLCV bars per symbol, one row per (symbol, date, source)
+Four tables:
+  - symbols            — master instrument list (ticker + exchange unique)
+  - ohlcv_daily        — daily OHLCV bars per symbol, one row per (symbol, date, source)
   - fundamentals_cache — historical snapshots of fundamentals JSON,
                          keyed on (symbol, date)
+  - order_audit_logs   — immutable audit trail for every order attempt
+                         (two-phase: SUBMITTING → ACCEPTED / FAILED / REJECTED)
 """
 
 import datetime
@@ -128,6 +130,51 @@ class FundamentalsCache(Base):
     )
 
     symbol: Mapped["Symbol"] = relationship("Symbol", back_populates="fundamentals")
+
+
+class OrderAuditLog(Base):
+    """Immutable audit record for every order attempt.
+
+    Two-phase lifecycle:
+      1. Written with status=SUBMITTING *before* the broker HTTP call.
+      2. Updated to ACCEPTED (with ``broker_order_id``) or FAILED on return.
+    Rejections write a single REJECTED row; they never reach the broker.
+
+    The session that writes this record is *independent* of the caller's
+    transaction so that a rollback in the caller cannot erase the audit entry.
+    """
+
+    __tablename__ = "order_audit_logs"
+    __table_args__ = (
+        Index("ix_order_audit_symbol", "symbol"),
+        Index("ix_order_audit_timestamp", "timestamp"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
+    side: Mapped[str] = mapped_column(String(10), nullable=False, comment="BUY or SELL")
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    stop_loss_price: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="REJECTED | SUBMITTING | ACCEPTED | FAILED",
+    )
+    rejection_reasons: Mapped[list] = mapped_column(  # type: ignore[type-arg]
+        JSONB, nullable=False, server_default="'[]'"
+    )
+    risk_metrics: Mapped[dict] = mapped_column(  # type: ignore[type-arg]
+        JSONB,
+        nullable=False,
+        server_default="'{}'",
+        comment="risk_amount, estimated_cost, binding_constraint, rule_details",
+    )
+    broker_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    raw_response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # type: ignore[type-arg]
 
 
 class FmpQuotaUsage(Base):

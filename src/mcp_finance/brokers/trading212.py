@@ -1,10 +1,10 @@
-"""Trading212 REST API adapter (read-only for now, demo mode by default)."""
+"""Trading212 REST API adapter."""
 
 from decimal import Decimal
 
 import httpx
 
-from mcp_finance.brokers.models import AccountSummary, Position
+from mcp_finance.brokers.models import AccountSummary, OrderResult, Position
 from mcp_finance.logger import get_logger
 from mcp_finance.settings import settings
 
@@ -95,3 +95,96 @@ class Trading212Client:
         )
         logger.info("Fetched account summary", total=str(summary.total))
         return summary
+
+    # ------------------------------------------------------------------
+    # Order placement (demo environment only)
+    # ------------------------------------------------------------------
+
+    async def place_order(
+        self,
+        ticker: str,
+        quantity: Decimal,
+        order_type: str = "MARKET",
+        limit_price: Decimal | None = None,
+    ) -> OrderResult:
+        """Submit a BUY order to Trading212.
+
+        Phase 9 restricts execution to the *demo* environment.  Calling this
+        against a live-environment client raises ``RuntimeError`` immediately,
+        before any HTTP request is made.
+
+        Parameters
+        ----------
+        ticker:
+            Broker-formatted ticker symbol (e.g. ``AAPL_US_EQ``).
+        quantity:
+            Number of whole or fractional shares to buy.
+        order_type:
+            ``"MARKET"`` (default) or ``"LIMIT"``.
+        limit_price:
+            Required when *order_type* is ``"LIMIT"``.
+
+        Raises
+        ------
+        RuntimeError
+            If called against a live (non-demo) environment.
+        httpx.HTTPStatusError
+            On non-2xx responses from the broker.
+        """
+        # Phase 9 hard guard — live trading is barred until Phase 10.
+        if self._env != "demo":
+            raise RuntimeError(
+                f"Live trading is blocked in Phase 9. "
+                f"Trading212Client is configured for env={self._env!r}; "
+                "only 'demo' is permitted."
+            )
+
+        if order_type == "LIMIT":
+            if limit_price is None:
+                raise ValueError("limit_price is required for LIMIT orders.")
+            payload: dict[str, object] = {
+                "ticker": ticker,
+                "quantity": str(quantity),
+                "limitPrice": str(limit_price),
+                "timeValidity": "DAY",
+            }
+            endpoint = "/equity/orders/limit"
+        else:
+            payload = {
+                "ticker": ticker,
+                "quantity": str(quantity),
+            }
+            endpoint = "/equity/orders/market"
+
+        logger.info(
+            "Placing order",
+            env=self._env,
+            ticker=ticker,
+            quantity=str(quantity),
+            order_type=order_type,
+        )
+        resp = await self._client.post(endpoint, json=payload)
+        resp.raise_for_status()
+        data: dict[str, object] = resp.json()
+
+        result = OrderResult(
+            id=str(data["id"]),
+            status=str(data.get("status", "UNKNOWN")),
+            ticker=str(data.get("ticker", ticker)),
+            quantity=Decimal(str(data.get("quantity", str(quantity)))),
+            filled_quantity=Decimal(str(data.get("filledQuantity", "0"))),
+            order_type=str(data.get("type", order_type)),
+            created_at=str(data.get("creationTime", "")),
+            limit_price=(
+                Decimal(str(data["limitPrice"]))
+                if data.get("limitPrice") is not None
+                else None
+            ),
+        )
+        logger.info(
+            "Order placed",
+            order_id=result.id,
+            status=result.status,
+            ticker=result.ticker,
+        )
+        return result
