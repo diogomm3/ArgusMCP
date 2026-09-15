@@ -16,12 +16,16 @@ against a fully-migrated schema (migration 0003 included).
 
 from __future__ import annotations
 
+import datetime
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from mcp_finance.brokers.models import AccountSummary
+from mcp_finance.db.models import FundamentalsCache, Symbol
 from mcp_finance.risk.audit import AuditService
 from mcp_finance.risk.models import (
     AuditStatus,
@@ -30,6 +34,7 @@ from mcp_finance.risk.models import (
     RiskDecision,
     RuleResult,
 )
+from mcp_finance.risk.risk_tools import EvaluateTradeInput, evaluate_trade_handler
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -297,3 +302,136 @@ class TestAuditRiskMetricsJsonb:
         assert row is not None
         assert row.risk_metrics["risk_amount"] == str(decision.risk_amount)
         assert row.risk_metrics["estimated_cost"] == str(decision.estimated_cost)
+
+
+class TestEvaluateTradeZeroDatabaseWrites:
+    """Verifies that evaluate_trade never writes to order_audit_logs in Postgres."""
+
+    @pytest.mark.asyncio
+    async def test_evaluate_trade_leaves_audit_table_untouched(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """Calling evaluate_trade results in zero rows written to audit log."""
+        broker = AsyncMock()
+        broker.get_account = AsyncMock(
+            return_value=AccountSummary(
+                cash=Decimal("50000"),
+                invested=Decimal("50000"),
+                result=Decimal("0"),
+                total=Decimal("100000"),
+                currency="USD",
+            )
+        )
+        broker.get_positions = AsyncMock(return_value=[])
+        broker.place_order = AsyncMock()
+
+        async with session_factory() as session:
+            # 1. Count rows before
+            count_before = (
+                await session.execute(text("SELECT COUNT(*) FROM order_audit_logs"))
+            ).scalar_one()
+
+            # 2. Evaluate an approved trade
+            inp_approved = EvaluateTradeInput(
+                symbol="AAPL",
+                entry_price=Decimal("150"),
+                stop_loss_price=Decimal("140"),
+            )
+            decision_approved = await evaluate_trade_handler(
+                inp_approved,
+                broker_client=broker,
+                session=session,
+            )
+            assert decision_approved.approved is True
+
+            # 3. Evaluate a rejected trade
+            inp_rejected = EvaluateTradeInput(
+                symbol="AAPL",
+                side=OrderSide.SELL,
+                entry_price=Decimal("150"),
+                stop_loss_price=Decimal("140"),
+            )
+            decision_rejected = await evaluate_trade_handler(
+                inp_rejected,
+                broker_client=broker,
+                session=session,
+            )
+            assert decision_rejected.approved is False
+
+            # 4. Count rows after
+            count_after = (
+                await session.execute(text("SELECT COUNT(*) FROM order_audit_logs"))
+            ).scalar_one()
+
+            # Row count must be strictly identical — zero audit entries created
+            assert count_after == count_before
+            broker.place_order.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_evaluate_trade_reads_sector_cache_without_writing(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
+        """evaluate_trade reads cached fundamentals without writing any rows."""
+        broker = AsyncMock()
+        broker.get_account = AsyncMock(
+            return_value=AccountSummary(
+                cash=Decimal("50000"),
+                invested=Decimal("50000"),
+                result=Decimal("0"),
+                total=Decimal("100000"),
+                currency="USD",
+            )
+        )
+        broker.get_positions = AsyncMock(return_value=[])
+        broker.place_order = AsyncMock()
+
+        async with session_factory() as session:
+            # Seed Symbol and FundamentalsCache
+            sym = Symbol(ticker="NVDA", exchange="NASDAQ", name="NVIDIA Corp")
+            session.add(sym)
+            await session.flush()
+
+            cache = FundamentalsCache(
+                symbol_id=sym.id,
+                as_of_date=datetime.date.today(),
+                payload={
+                    "profile": {
+                        "sector": "Semiconductors",
+                        "companyName": "NVIDIA Corp",
+                    }
+                },
+            )
+            session.add(cache)
+            await session.commit()
+
+            count_before = (
+                await session.execute(text("SELECT COUNT(*) FROM order_audit_logs"))
+            ).scalar_one()
+
+            inp = EvaluateTradeInput(
+                symbol="NVDA",
+                entry_price=Decimal("120"),
+                stop_loss_price=Decimal("114"),  # 5% stop
+                sector=None,  # should auto-populate from seeded cache!
+            )
+            decision = await evaluate_trade_handler(
+                inp,
+                broker_client=broker,
+                session=session,
+            )
+
+            assert decision.approved is True
+            r5 = next(
+                r
+                for r in decision.rule_results
+                if r.rule_name == "check_max_sector_exposure"
+            )
+            assert r5.details.get("sector") == "Semiconductors"
+
+            count_after = (
+                await session.execute(text("SELECT COUNT(*) FROM order_audit_logs"))
+            ).scalar_one()
+            assert count_after == count_before
+            broker.place_order.assert_not_called()
