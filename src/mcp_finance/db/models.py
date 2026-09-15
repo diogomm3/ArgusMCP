@@ -50,16 +50,36 @@ class Symbol(Base):
         ),  # non-unique: same ISIN can list on multiple exchanges
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
-    exchange: Mapped[str] = mapped_column(String(20), nullable=False)
-    isin: Mapped[str | None] = mapped_column(String(12), nullable=True)
-    name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+    ticker: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    exchange: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+    isin: Mapped[str | None] = mapped_column(
+        String(12),
+        nullable=True,
+    )
+    name: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
     asset_class: Mapped[str | None] = mapped_column(
-        String(20), nullable=True, comment="e.g. 'STOCK', 'ETF'"
+        String(20),
+        nullable=True,
+        comment="e.g. 'STOCK', 'ETF'",
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
     ohlcv_bars: Mapped[list["OhlcvDaily"]] = relationship(
@@ -87,18 +107,44 @@ class OhlcvDaily(Base):
         Index("ix_ohlcv_symbol_date_desc", "symbol_id", "date"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    symbol_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("symbols.id", ondelete="CASCADE"), nullable=False
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
     )
-    date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
-    open: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    high: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    low: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    close: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    symbol_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("symbols.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    date: Mapped[datetime.date] = mapped_column(
+        Date,
+        nullable=False,
+    )
+    open: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+    )
+    high: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+    )
+    low: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+    )
+    close: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+    )
+    volume: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+    )
     source: Mapped[str] = mapped_column(
-        String(30), nullable=False, comment="e.g. 'yfinance', 'twelve_data'"
+        String(30),
+        nullable=False,
+        comment="e.g. 'yfinance', 'twelve_data'",
     )
 
     symbol: Mapped["Symbol"] = relationship("Symbol", back_populates="ohlcv_bars")
@@ -119,14 +165,28 @@ class FundamentalsCache(Base):
         Index("ix_fundamentals_symbol_date_desc", "symbol_id", "as_of_date"),
     )
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    symbol_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("symbols.id", ondelete="CASCADE"), nullable=False
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
     )
-    as_of_date: Mapped[datetime.date] = mapped_column(Date, nullable=False)
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)  # type: ignore[type-arg]
+    symbol_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("symbols.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    as_of_date: Mapped[datetime.date] = mapped_column(
+        Date,
+        nullable=False,
+    )
+    payload: Mapped[dict] = mapped_column(  # type: ignore[type-arg]
+        JSONB,
+        nullable=False,
+    )
     fetched_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 
     symbol: Mapped["Symbol"] = relationship("Symbol", back_populates="fundamentals")
@@ -150,22 +210,46 @@ class OrderAuditLog(Base):
         Index("ix_order_audit_timestamp", "timestamp"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    timestamp: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
     )
-    symbol: Mapped[str] = mapped_column(String(30), nullable=False)
-    side: Mapped[str] = mapped_column(String(10), nullable=False, comment="BUY or SELL")
-    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    entry_price: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
-    stop_loss_price: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    timestamp: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    symbol: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+    side: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        comment="BUY or SELL",
+    )
+    quantity: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+    )
+    entry_price: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+    )
+    stop_loss_price: Mapped[Decimal] = mapped_column(
+        Numeric(18, 6),
+        nullable=False,
+    )
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         comment="REJECTED | SUBMITTING | ACCEPTED | FAILED",
     )
     rejection_reasons: Mapped[list] = mapped_column(  # type: ignore[type-arg]
-        JSONB, nullable=False, server_default="'[]'"
+        JSONB,
+        nullable=False,
+        server_default="'[]'",
     )
     risk_metrics: Mapped[dict] = mapped_column(  # type: ignore[type-arg]
         JSONB,
@@ -173,8 +257,14 @@ class OrderAuditLog(Base):
         server_default="'{}'",
         comment="risk_amount, estimated_cost, binding_constraint, rule_details",
     )
-    broker_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    raw_response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # type: ignore[type-arg]
+    broker_order_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    raw_response: Mapped[dict | None] = mapped_column(  # type: ignore[type-arg]
+        JSONB,
+        nullable=True,
+    )
 
 
 class FmpQuotaUsage(Base):
@@ -187,8 +277,15 @@ class FmpQuotaUsage(Base):
 
     __tablename__ = "fmp_quota_usage"
 
-    date: Mapped[datetime.date] = mapped_column(Date, primary_key=True)
-    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    date: Mapped[datetime.date] = mapped_column(
+        Date,
+        primary_key=True,
+    )
+    request_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
