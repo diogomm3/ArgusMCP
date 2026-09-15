@@ -8,6 +8,7 @@ from mcp_finance.charting.charting_tools import register_charting_tools
 from mcp_finance.fundamentals.fmp_tools import register_fmp_tools
 from mcp_finance.logger import configure_logging, get_logger
 from mcp_finance.market_data.yfinance_tools import register_yfinance_tools
+from mcp_finance.risk.risk_tools import register_risk_tools
 from mcp_finance.screener.screener_tools import register_screener_tools
 
 configure_logging()
@@ -28,6 +29,7 @@ register_yfinance_tools(mcp)
 register_fmp_tools(mcp)
 register_screener_tools(mcp)
 register_charting_tools(mcp)
+register_risk_tools(mcp)
 
 app = AuthMiddleware(mcp.streamable_http_app(host="0.0.0.0"))
 
