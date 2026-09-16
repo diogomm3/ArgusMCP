@@ -1,13 +1,34 @@
-"""Staged Phase 9 smoke test.
-
-Stage 1 — Deliberate rejection:
-  POST place_order with stop_loss_price > entry_price (Rule 1 fail).
-  Expected: success=False, REJECTED audit row in DB, zero broker calls.
-
-Stage 2 — Small approved demo order:
-  POST place_order with AAPL, qty=1, valid stop-loss.
-  Expected: success=True, SUBMITTING→ACCEPTED audit rows, real broker_order_id,
-            position visible in subsequent get_positions() call (via T212 API).
+"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                         ⚠  MANUAL SCRIPT — READ BEFORE RUNNING  ⚠          ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  This script places a REAL ORDER against the Trading212 DEMO account.       ║
+║                                                                              ║
+║  REQUIREMENTS:                                                               ║
+║    - The Docker stack must be running: `docker compose up -d`                ║
+║    - A valid .env file with demo Trading212 credentials must be present.     ║
+║    - The DATABASE_URL in .env must point at the running Postgres container.  ║
+║                                                                              ║
+║  NEVER:                                                                      ║
+║    - Run this script against a live (non-demo) Trading212 environment.       ║
+║    - Include this script in automated test suites or CI pipelines.           ║
+║    - Run this script automatically or as part of any scheduled job.          ║
+║                                                                              ║
+║  This script lives in scripts/ (NOT tests/) deliberately. Everything under  ║
+║  tests/ is safe to run by anyone at any time; this script mutates a real     ║
+║  (demo) broker account and must only be invoked manually and intentionally.  ║
+║                                                                              ║
+║  WHAT IT DOES:                                                               ║
+║    Stage 1 — Deliberate rejection:                                           ║
+║      POST place_order with stop_loss_price > entry_price (Rule 1 fail).     ║
+║      Expected: success=False, REJECTED audit row in DB, zero broker calls.  ║
+║                                                                              ║
+║    Stage 2 — Small approved demo order:                                      ║
+║      POST place_order with AAPL, qty=1, valid stop-loss.                    ║
+║      Expected: success=True, SUBMITTING→ACCEPTED audit rows,                 ║
+║                real broker_order_id, position confirmed via T212 API.        ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
 import asyncio
