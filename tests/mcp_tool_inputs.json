@@ -1,0 +1,136 @@
+{
+  "_comment": "Sample input payloads for manual MCP tool testing via npx @modelcontextprotocol/inspector. Each key is the exact registered tool name; the value is a ready-to-paste arguments object. Start the Docker stack before running: docker compose up -d",
+
+  "ping": {},
+
+  "get_positions": {},
+
+  "get_account": {},
+
+  "get_symbol_price": {
+    "input": {
+      "symbol": "AAPL"
+    }
+  },
+
+  "get_history": {
+    "input": {
+      "symbol": "AAPL",
+      "start_date": "2025-01-01",
+      "end_date": "2025-03-31"
+    }
+  },
+
+  "get_history_international": {
+    "_tool": "get_history",
+    "input": {
+      "symbol": "SAP",
+      "start_date": "2025-01-01",
+      "end_date": "2025-03-31",
+      "exchange": "XETRA"
+    }
+  },
+
+  "get_stock_fundamentals": {
+    "input": {
+      "symbol": "AAPL"
+    }
+  },
+
+  "get_stock_fundamentals_international": {
+    "_tool": "get_stock_fundamentals",
+    "input": {
+      "symbol": "ASML.AS",
+      "exchange": "EURONEXT_AMSTERDAM"
+    }
+  },
+
+  "screen_stocks": {
+    "input": {
+      "symbols": ["AAPL", "MSFT", "NVDA", "AMZN", "TSLA", "SAP", "ASML"],
+      "as_of_date": "2025-03-31",
+      "allow_live_fundamentals": false,
+      "include_failed": true
+    }
+  },
+
+  "screen_stocks_default_watchlist": {
+    "_tool": "screen_stocks",
+    "input": {
+      "allow_live_fundamentals": false,
+      "include_failed": false
+    }
+  },
+
+  "get_stock_chart": {
+    "input": {
+      "symbol": "AAPL",
+      "lookback_days": 90
+    }
+  },
+
+  "get_stock_chart_short": {
+    "_tool": "get_stock_chart",
+    "input": {
+      "symbol": "MSFT",
+      "lookback_days": 30
+    }
+  },
+
+  "evaluate_trade": {
+    "input": {
+      "symbol": "AAPL",
+      "entry_price": "220.00",
+      "stop_loss_price": "209.00",
+      "side": "BUY",
+      "order_type": "MARKET"
+    }
+  },
+
+  "evaluate_trade_with_sector_and_earnings": {
+    "_tool": "evaluate_trade",
+    "input": {
+      "symbol": "AAPL",
+      "entry_price": "220.00",
+      "stop_loss_price": "209.00",
+      "quantity": "5",
+      "side": "BUY",
+      "order_type": "MARKET",
+      "sector": "Technology",
+      "next_earnings_date": "2025-08-01"
+    }
+  },
+
+  "evaluate_trade_deliberate_rejection": {
+    "_tool": "evaluate_trade",
+    "_note": "stop_loss_price > entry_price — Rule 1 must reject this",
+    "input": {
+      "symbol": "AAPL",
+      "entry_price": "220.00",
+      "stop_loss_price": "230.00",
+      "side": "BUY",
+      "order_type": "MARKET"
+    }
+  },
+
+  "place_order": {
+    "_note": "Places a REAL order on the Trading212 DEMO account. Requires Docker stack running. Do NOT use with TRADING212_ENV=live.",
+    "input": {
+      "symbol": "AAPL",
+      "entry_price": "220.00",
+      "stop_loss_price": "209.00",
+      "order_type": "MARKET"
+    }
+  },
+
+  "place_order_deliberate_rejection": {
+    "_tool": "place_order",
+    "_note": "stop_loss_price > entry_price — risk engine rejects before touching broker",
+    "input": {
+      "symbol": "AAPL",
+      "entry_price": "220.00",
+      "stop_loss_price": "230.00",
+      "order_type": "MARKET"
+    }
+  }
+}

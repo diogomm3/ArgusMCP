@@ -345,6 +345,25 @@ curl -s -X POST http://localhost:8000/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping","arguments":{}}}'
 ```
 
+### Manual testing with MCP Inspector
+
+[MCP Inspector](https://github.com/modelcontextprotocol/inspector) is a browser-based tool for calling MCP tools interactively without writing a full client. Run it with:
+
+```bash
+npx @modelcontextprotocol/inspector
+```
+
+Then in the Inspector UI:
+1. Set **Transport** to `Streamable HTTP`.
+2. Set **URL** to `http://localhost:8000/mcp`.
+3. Add a request header: `Authorization: Bearer <MCP_AUTH_TOKEN>`.
+4. Click **Connect**.
+
+Sample argument payloads for every registered tool are in `tests/mcp_tool_inputs.json`. Each entry is keyed by tool name; entries with a `_tool` field are alternative scenarios for the same tool (the tool name to select is the `_tool` value). Copy the `input` object from the relevant entry into the Inspector's **Arguments** field.
+
+> [!CAUTION]
+> The `place_order` entries in `mcp_tool_inputs.json` submit a real order to the Trading212 **demo** account. Only run these if the Docker stack is up, `.env` has valid demo credentials, and you intend to place an order.
+
 ---
 
 ## Docker
