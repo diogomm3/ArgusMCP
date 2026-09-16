@@ -35,9 +35,14 @@ _TO_BROKER_CASES: list[tuple[str, str]] = [
     ("TSLA", "TSLA_US_EQ"),
     # .US suffix → _US_EQ
     ("AAPL.US", "AAPL_US_EQ"),
-    # .DE suffix → _DE_EQ
+    # Regional dotted suffixes → broker format
     ("SAP.DE", "SAP_DE_EQ"),
     ("BAS.DE", "BAS_DE_EQ"),
+    ("LLOY.UK", "LLOY_UK_EQ"),
+    ("BP.L", "BP_UK_EQ"),
+    ("SHOP.CA", "SHOP_CA_EQ"),
+    ("AIR.FR", "AIR_FR_EQ"),
+    ("ASML.NL", "ASML_NL_EQ"),
     # Already-broker-formatted tickers: must pass through unchanged (no double suffix)
     ("AAPL_US_EQ", "AAPL_US_EQ"),
     ("SAP_DE_EQ", "SAP_DE_EQ"),

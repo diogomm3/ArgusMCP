@@ -239,10 +239,18 @@ def to_broker_ticker(symbol: str) -> str:
     s = symbol.strip().upper()
     if "_" in s:
         return s
-    if s.endswith(".US"):
-        return f"{s[:-3]}_US_EQ"
-    if s.endswith(".DE"):
-        return f"{s[:-3]}_DE_EQ"
+    dotted_suffixes: dict[str, str] = {
+        ".US": "_US_EQ",
+        ".DE": "_DE_EQ",
+        ".UK": "_UK_EQ",
+        ".CA": "_CA_EQ",
+        ".FR": "_FR_EQ",
+        ".NL": "_NL_EQ",
+        ".L": "_UK_EQ",
+    }
+    for dot, broker_suff in dotted_suffixes.items():
+        if s.endswith(dot):
+            return f"{s[: -len(dot)]}{broker_suff}"
     return f"{s}_US_EQ"
 
 
