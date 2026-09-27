@@ -267,3 +267,92 @@ class Level(BaseModel):
         ...,
         description="Highest touch price in the cluster",
     )
+
+
+class VolumeBin(BaseModel):
+    """A single price bin in the Volume Profile."""
+
+    price_level: Decimal = Field(
+        ...,
+        description="Center price of this bin",
+    )
+    price_low: Decimal = Field(
+        ...,
+        description="Lower price boundary of this bin",
+    )
+    price_high: Decimal = Field(
+        ...,
+        description="Upper price boundary of this bin",
+    )
+    volume: Decimal = Field(
+        ...,
+        ge=Decimal("0"),
+        description=(
+            "Volume allocated to this bin (fractional from proportional range split)"
+        ),
+    )
+    pct_of_total: Decimal = Field(
+        ...,
+        description="Fraction of total profile volume in this bin (0.0 to 1.0)",
+    )
+    is_poc: bool = Field(
+        default=False,
+        description="True if this bin is the Point of Control",
+    )
+    in_value_area: bool = Field(
+        default=False,
+        description="True if this bin is inside the Value Area (VAL <= price <= VAH)",
+    )
+
+
+class VolumeProfile(BaseModel):
+    """Volume Profile analytical output for a specified bar window."""
+
+    poc: Decimal = Field(
+        ...,
+        description="Point of Control: price level of the bin with highest volume",
+    )
+    vah: Decimal = Field(
+        ...,
+        description="Value Area High: upper price boundary of the Value Area",
+    )
+    val: Decimal = Field(
+        ...,
+        description="Value Area Low: lower price boundary of the Value Area",
+    )
+    total_volume: int = Field(
+        ...,
+        gt=0,
+        description="Exact integer sum of traded volume across all bars in the profile",
+    )
+    value_area_volume: Decimal = Field(
+        ...,
+        gt=Decimal("0"),
+        description="Total volume contained within the Value Area [VAL, VAH]",
+    )
+    hvn: list[Decimal] = Field(
+        default_factory=list,
+        description="High Volume Nodes: price levels of significant local volume peaks",
+    )
+    lvn: list[Decimal] = Field(
+        default_factory=list,
+        description=(
+            "Low Volume Nodes: price levels of significant volume valleys between HVNs"
+        ),
+    )
+    bins: list[VolumeBin] = Field(
+        default_factory=list,
+        description="Full distribution across all price bins",
+    )
+    start_date: datetime.date = Field(
+        ...,
+        description="Start date of the analyzed OHLCV window",
+    )
+    end_date: datetime.date = Field(
+        ...,
+        description="End date of the analyzed OHLCV window",
+    )
+    num_bins: int = Field(
+        ...,
+        description="Number of price bins used for discretization",
+    )

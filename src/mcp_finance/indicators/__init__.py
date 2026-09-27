@@ -31,7 +31,13 @@ from mcp_finance.indicators.functions import (
     rolling_percentile,
     rsi,
 )
-from mcp_finance.indicators.models import Candidate, Level, LevelType
+from mcp_finance.indicators.models import (
+    Candidate,
+    Level,
+    LevelType,
+    VolumeBin,
+    VolumeProfile,
+)
 from mcp_finance.indicators.snapshot import (
     SymbolNotCachedError,
     build_candidate_snapshot,
@@ -45,6 +51,7 @@ from mcp_finance.indicators.structure import (
     swing_highs_lows,
     week_52_high_low,
 )
+from mcp_finance.indicators.volume_profile import build_volume_profile
 
 __all__ = [
     # Phase 5 core
@@ -83,4 +90,8 @@ __all__ = [
     "gap_analysis",
     "distance_to_level",
     "week_52_high_low",
+    # M2 Volume Profile
+    "VolumeBin",
+    "VolumeProfile",
+    "build_volume_profile",
 ]
