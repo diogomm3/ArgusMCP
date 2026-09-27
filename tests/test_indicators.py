@@ -872,34 +872,51 @@ def test_price_vs_ema_distance_zero_atr_skips_atr_dist() -> None:
 
 
 @pytest.mark.unit
-def test_adx_warmup_boundary_returns_nan_until_2period_minus_1() -> None:
-    """ADX on a series of length exactly 2*period - 2 must be all NaN.
+def test_adx_warmup_boundary_three_point_check() -> None:
+    """Explicit 3-point ADX warmup boundary test: N=26, N=27, N=28 for period=14.
 
-    This is the mirror of test_ema_min_periods_returns_nan_on_insufficient_bars
-    from Phase 5. ADX needs 2*period - 1 bars: period bars to warm DI, then
-    another period bars to smooth DX into ADX. With only 2*period - 2 bars,
-    the final ADX value must still be NaN.
+    Wilder's ADX warmup contract requires 2*period - 1 bars (27 bars for period=14):
+      - N = 26 (2*period - 2): under-warmed; all 26 values must be NaN.
+      - N = 27 (2*period - 1): exact boundary; first non-NaN ADX value appears.
+      - N = 28 (2*period): warmed; exactly 2 valid ADX values exist.
     """
     period = 14
-    n_under = 2 * period - 2  # exactly one bar short
-    close = np.linspace(100.0, 115.0, n_under)
-    high = close + 1.0
-    low = close - 1.0
-    df_short = pd.DataFrame(
-        {
-            "high": high,
-            "low": low,
-            "close": close,
-            "open": close - 0.5,
-            "volume": np.full(n_under, 1_000_000),
-        }
+
+    def _make_df(n: int) -> pd.DataFrame:
+        c = np.linspace(100.0, 115.0, n)
+        return pd.DataFrame(
+            {
+                "high": c + 1.0,
+                "low": c - 1.0,
+                "close": c,
+                "open": c - 0.5,
+                "volume": np.full(n, 1_000_000),
+            }
+        )
+
+    # Point 1: N = 26 (2*period - 2) — strictly under-warmed
+    res_26 = adx(_make_df(26), period=period)
+    assert res_26["adx"].isna().all(), (
+        f"N=26: Expected all-NaN ADX, got non-NaN count {res_26['adx'].notna().sum()}"
     )
-    result = adx(df_short, period=period)
-    # ADX column must be entirely NaN for under-warmed series
-    assert result["adx"].isna().all(), (
-        f"Expected all-NaN ADX on {n_under}-bar series (2*period-2), "
-        f"got last={result['adx'].iloc[-1]}"
+    assert np.isnan(res_26["adx"].iloc[-1])
+
+    # Point 2: N = 27 (2*period - 1) — exact boundary
+    res_27 = adx(_make_df(27), period=period)
+    assert res_27["adx"].iloc[:-1].isna().all(), (
+        "N=27: Expected all prior bars to be NaN"
     )
+    assert pd.notna(res_27["adx"].iloc[-1]), (
+        f"N=27: Expected valid float at index 26, got {res_27['adx'].iloc[-1]}"
+    )
+    assert res_27["adx"].notna().sum() == 1
+
+    # Point 3: N = 28 (2*period) — post-boundary
+    res_28 = adx(_make_df(28), period=period)
+    assert res_28["adx"].notna().sum() == 2, (
+        f"N=28: Expected exactly 2 valid floats, got {res_28['adx'].notna().sum()}"
+    )
+    assert pd.notna(res_28["adx"].iloc[-2]) and pd.notna(res_28["adx"].iloc[-1])
 
 
 @pytest.mark.unit

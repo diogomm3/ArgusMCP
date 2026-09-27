@@ -35,7 +35,7 @@ DEFAULT_WATCHLIST: list[str] = [
 
 async def run_batch_ingest(
     symbols: list[str] | None = None,
-    days: int = 365,
+    days: int = 400,
     delay_seconds: float = 0.5,
     session: AsyncSession | None = None,
 ) -> BatchIngestResult:
@@ -129,8 +129,11 @@ def main() -> None:
     parser.add_argument(
         "--days",
         type=int,
-        default=365,
-        help="Number of past calendar days of history to ingest (default: 365).",
+        default=400,
+        help=(
+            "Number of past calendar days of history to ingest (default: 400, "
+            "ensuring ≥252 trading bars for EMA-200 and rolling percentiles)."
+        ),
     )
     parser.add_argument(
         "--delay",
