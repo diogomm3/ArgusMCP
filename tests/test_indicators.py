@@ -28,7 +28,25 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mcp_finance.indicators.functions import atr, ema, macd, rsi
+from mcp_finance.indicators.functions import (
+    adx,
+    atr,
+    atr_expansion_ratio,
+    bollinger_bands,
+    bollinger_bandwidth,
+    dollar_volume,
+    ema,
+    ema_alignment,
+    ema_slope,
+    macd,
+    mfi,
+    obv,
+    price_vs_ema_distance,
+    relative_volume,
+    roc,
+    rolling_percentile,
+    rsi,
+)
 from mcp_finance.indicators.snapshot import (
     SymbolNotCachedError,
     build_candidate_snapshot,
@@ -589,3 +607,392 @@ async def test_build_candidate_snapshot_partial_warmup_30_bars(
     assert candidate.macd_line is not None  # 30 >= 26
     assert candidate.macd_signal is None  # 30 < 34 bars for signal warmup
     assert candidate.macd_histogram is None
+
+
+# ---------------------------------------------------------------------------
+# M1.2 — Trend-extension tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_ema_slope_sign_and_magnitude_on_linear_series(
+    linear_df: pd.DataFrame,
+) -> None:
+    """ema_slope on a strictly linear series: last value must be positive
+    and match the hand-computed total pct change over lookback_bars=5.
+
+    linear_df: close[i] = 100 + i*0.5  (i = 0..59)
+    EMA-20 is strictly increasing, so slope over any 5-bar window is > 0.
+    We verify the exact value against an independently computed reference.
+    """
+    ema_series = ema(linear_df, 20)
+    slope = ema_slope(ema_series, lookback_bars=5)
+
+    # First lookback_bars values (indices 0..4) must be NaN; first valid EMA
+    # is at index 19 (period-1), so slope first valid at index 19+5=24.
+    assert slope.iloc[:24].isna().all(), "Expected NaN for under-warmed slope"
+
+    # Reference: (EMA[t] - EMA[t-5]) / EMA[t-5] for the last bar.
+    last_ema = ema_series.dropna()
+    ref = (last_ema.iloc[-1] - last_ema.iloc[-6]) / last_ema.iloc[-6]
+    np.testing.assert_allclose(slope.iloc[-1], ref, rtol=1e-9)
+
+    # The slope must be strictly positive on a monotonically rising EMA.
+    assert slope.dropna().gt(0).all(), "Expected all positive slopes on rising EMA"
+
+
+@pytest.mark.unit
+def test_ema_slope_lookback_less_than_1_raises() -> None:
+    """lookback_bars < 1 must raise ValueError immediately."""
+    s = pd.Series([1.0, 2.0, 3.0])
+    with pytest.raises(ValueError, match="lookback_bars must be at least 1"):
+        ema_slope(s, lookback_bars=0)
+
+
+@pytest.mark.unit
+def test_ema_slope_negative_reference_returns_nan() -> None:
+    """If prev value is <= 0, slope must be NaN (no division by zero/negative)."""
+    s = pd.Series([-1.0, -0.5, -0.1, 0.0, 1.0, 2.0])
+    result = ema_slope(s, lookback_bars=3)
+    # indices 0..2 are NaN (warmup); index 3: ref is s[0]=-1 -> NaN; same for 4
+    assert result.iloc[:5].isna().all()
+
+
+@pytest.mark.unit
+def test_ema_alignment_bullish() -> None:
+    """ema9 > ema20 > ema50 > ema200 -> 'bullish'."""
+    assert ema_alignment(90.0, 80.0, 70.0, 60.0) == "bullish"
+
+
+@pytest.mark.unit
+def test_ema_alignment_bearish() -> None:
+    """ema9 < ema20 < ema50 < ema200 -> 'bearish'."""
+    assert ema_alignment(60.0, 70.0, 80.0, 90.0) == "bearish"
+
+
+@pytest.mark.unit
+def test_ema_alignment_mixed_partial_order() -> None:
+    """Any ordering that is neither strict bull nor strict bear -> 'mixed'."""
+    assert ema_alignment(90.0, 80.0, 85.0, 60.0) == "mixed"
+
+
+@pytest.mark.unit
+def test_ema_alignment_equal_values_is_mixed() -> None:
+    """Equal EMAs (not strictly ordered) must return 'mixed', not 'bullish'."""
+    assert ema_alignment(80.0, 80.0, 70.0, 60.0) == "mixed"
+
+
+@pytest.mark.unit
+def test_ema_alignment_any_none_is_mixed() -> None:
+    """Any None argument must immediately return 'mixed'."""
+    assert ema_alignment(None, 80.0, 70.0, 60.0) == "mixed"
+    assert ema_alignment(90.0, None, 70.0, 60.0) == "mixed"
+    assert ema_alignment(90.0, 80.0, None, 60.0) == "mixed"
+    assert ema_alignment(90.0, 80.0, 70.0, None) == "mixed"
+
+
+@pytest.mark.unit
+def test_price_vs_ema_distance_pct_formula() -> None:
+    """Verify (price - ema) / ema formula with exact reference values."""
+    price = Decimal("110")
+    ema_val = Decimal("100")
+    pct_dist, atr_dist = price_vs_ema_distance(price, ema_val)
+    assert pct_dist == Decimal("0.1")  # (110 - 100) / 100 = 0.10
+    assert atr_dist is None  # no ATR passed
+
+
+@pytest.mark.unit
+def test_price_vs_ema_distance_atr_normalized() -> None:
+    """ATR-normalized distance = (price - ema) / atr."""
+    price = Decimal("105")
+    ema_val = Decimal("100")
+    atr_val = Decimal("2.5")
+    pct_dist, atr_dist = price_vs_ema_distance(price, ema_val, atr_val)
+    assert pct_dist == Decimal("0.05")  # (105 - 100) / 100
+    assert atr_dist == Decimal("2")  # (105 - 100) / 2.5
+
+
+@pytest.mark.unit
+def test_price_vs_ema_distance_negative_ema_raises() -> None:
+    """ema_val <= 0 must raise ValueError."""
+    with pytest.raises(ValueError, match="ema_val must be strictly positive"):
+        price_vs_ema_distance(Decimal("100"), Decimal("0"))
+    with pytest.raises(ValueError, match="ema_val must be strictly positive"):
+        price_vs_ema_distance(Decimal("100"), Decimal("-5"))
+
+
+@pytest.mark.unit
+def test_price_vs_ema_distance_zero_atr_skips_atr_dist() -> None:
+    """atr_val of zero must not cause division by zero — atr_dist = None."""
+    _, atr_dist = price_vs_ema_distance(
+        Decimal("100"), Decimal("90"), atr_val=Decimal("0")
+    )
+    assert atr_dist is None
+
+
+# ---------------------------------------------------------------------------
+# M1.3 — Momentum-extension tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_adx_warmup_boundary_returns_nan_until_2period_minus_1() -> None:
+    """ADX on a series of length exactly 2*period - 2 must be all NaN.
+
+    This is the mirror of test_ema_min_periods_returns_nan_on_insufficient_bars
+    from Phase 5. ADX needs 2*period - 1 bars: period bars to warm DI, then
+    another period bars to smooth DX into ADX. With only 2*period - 2 bars,
+    the final ADX value must still be NaN.
+    """
+    period = 14
+    n_under = 2 * period - 2  # exactly one bar short
+    close = np.linspace(100.0, 115.0, n_under)
+    high = close + 1.0
+    low = close - 1.0
+    df_short = pd.DataFrame(
+        {
+            "high": high,
+            "low": low,
+            "close": close,
+            "open": close - 0.5,
+            "volume": np.full(n_under, 1_000_000),
+        }
+    )
+    result = adx(df_short, period=period)
+    # ADX column must be entirely NaN for under-warmed series
+    assert result["adx"].isna().all(), (
+        f"Expected all-NaN ADX on {n_under}-bar series (2*period-2), "
+        f"got last={result['adx'].iloc[-1]}"
+    )
+
+
+@pytest.mark.unit
+def test_adx_strong_trend_returns_high_value(linear_df: pd.DataFrame) -> None:
+    """ADX on a strongly trending series must produce a high positive value.
+
+    A 60-bar linearly rising series is a strong trend; ADX (once warmed up)
+    should converge well above 25 (conventional strong-trend threshold).
+    Plus-DI must exceed Minus-DI in an up-trend.
+    """
+    result = adx(linear_df, period=14)
+    last_adx = result["adx"].dropna().iloc[-1]
+    last_plus_di = result["plus_di"].dropna().iloc[-1]
+    last_minus_di = result["minus_di"].dropna().iloc[-1]
+
+    assert last_adx > 25.0, f"Expected ADX > 25 on strong up-trend, got {last_adx:.2f}"
+    assert last_plus_di > last_minus_di, (
+        f"Expected +DI > -DI in up-trend; +DI={last_plus_di:.2f}, "
+        f"-DI={last_minus_di:.2f}"
+    )
+
+
+@pytest.mark.unit
+def test_adx_all_values_in_range(linear_df: pd.DataFrame) -> None:
+    """All non-NaN ADX, +DI, and -DI values must be in [0, 100]."""
+    result = adx(linear_df, period=14)
+    for col in ["adx", "plus_di", "minus_di"]:
+        valid = result[col].dropna()
+        assert (valid >= 0.0).all() and (valid <= 100.0).all(), (
+            f"{col} out of [0, 100] range"
+        )
+
+
+@pytest.mark.unit
+def test_roc_known_value_on_linear_series(linear_df: pd.DataFrame) -> None:
+    """ROC-10 on close = 100 + i*0.5.
+
+    Reference = (close[i] - close[i-10]) / close[i-10].
+    """
+    result = roc(linear_df, period=10)
+    # First 10 values must be NaN.
+    assert result.iloc[:10].isna().all()
+    # Last value: close[59]=129.5, close[49]=124.5
+    ref = (129.5 - 124.5) / 124.5
+    np.testing.assert_allclose(result.iloc[-1], ref, rtol=1e-9)
+
+
+@pytest.mark.unit
+def test_roc_period_less_than_1_raises() -> None:
+    """period < 1 must raise ValueError."""
+    df = pd.DataFrame({"close": [1.0, 2.0, 3.0]})
+    with pytest.raises(ValueError, match="period must be at least 1"):
+        roc(df, period=0)
+
+
+# ---------------------------------------------------------------------------
+# M1.4 — Volatility-extension tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_bollinger_bands_zero_std_on_constant_series() -> None:
+    """Bollinger Bands on a constant series: upper = lower = middle = constant."""
+    n = 25
+    df = pd.DataFrame(
+        {
+            "close": np.full(n, 100.0),
+            "high": np.full(n, 101.0),
+            "low": np.full(n, 99.0),
+            "open": np.full(n, 100.0),
+            "volume": np.full(n, 1_000_000),
+        }
+    )
+    bands = bollinger_bands(df, period=20, num_std=2.0)
+    valid = bands.dropna()
+    assert len(valid) == 6  # rows 19..24
+    np.testing.assert_allclose(valid["middle"].values, 100.0, rtol=1e-9)
+    np.testing.assert_allclose(valid["upper"].values, 100.0, rtol=1e-9)
+    np.testing.assert_allclose(valid["lower"].values, 100.0, rtol=1e-9)
+
+
+@pytest.mark.unit
+def test_bollinger_bands_spread_on_volatile(volatile_df: pd.DataFrame) -> None:
+    """Upper band must be > middle > lower for a series with genuine variance."""
+    bands = bollinger_bands(volatile_df, period=20, num_std=2.0)
+    valid = bands.dropna()
+    assert (valid["upper"] > valid["middle"]).all()
+    assert (valid["middle"] > valid["lower"]).all()
+
+
+@pytest.mark.unit
+def test_bollinger_bandwidth_formula(volatile_df: pd.DataFrame) -> None:
+    """Bandwidth = (upper - lower) / middle; verify against hand-computed reference."""
+    bands = bollinger_bands(volatile_df, period=20, num_std=2.0)
+    bw = bollinger_bandwidth(bands)
+    ref = (bands["upper"] - bands["lower"]) / bands["middle"]
+    valid_bw = bw.dropna()
+    valid_ref = ref.dropna()
+    np.testing.assert_allclose(valid_bw.values, valid_ref.values, rtol=1e-9)
+
+
+@pytest.mark.unit
+def test_rolling_percentile_known_rank() -> None:
+    """rolling_percentile on a known sequence: at index 3 rank is 0.0, index 4 is 1/3.
+
+    Series:  [10, 8, 6, 4, 5, 7, 9] with window=4.
+    At index 3: window=[10,8,6,4]. current=4, past=[10,8,6]. rank = 0/3 = 0.0.
+    At index 4: window=[8,6,4,5]. current=5, past=[8,6,4]. rank = 1/3.
+    """
+    s = pd.Series([10.0, 8.0, 6.0, 4.0, 5.0, 7.0, 9.0])
+    result = rolling_percentile(s, window=4)
+    # First 3 values NaN (window-1).
+    assert result.iloc[:3].isna().all()
+    np.testing.assert_allclose(result.iloc[3], 0.0, atol=1e-9)
+    np.testing.assert_allclose(result.iloc[4], 1.0 / 3.0, rtol=1e-9)
+
+
+@pytest.mark.unit
+def test_rolling_percentile_window_less_than_2_raises() -> None:
+    """window < 2 must raise ValueError."""
+    s = pd.Series([1.0, 2.0, 3.0])
+    with pytest.raises(ValueError, match="window must be at least 2"):
+        rolling_percentile(s, window=1)
+
+
+@pytest.mark.unit
+def test_atr_expansion_ratio_unity_on_constant_atr() -> None:
+    """If ATR is constant, the expansion ratio must be 1.0 for all valid bars."""
+    atr_const = pd.Series(np.full(60, 2.0))
+    ratio = atr_expansion_ratio(atr_const, avg_period=10)
+    valid = ratio.dropna()
+    np.testing.assert_allclose(valid.values, 1.0, rtol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# M1.5 — Volume-extension tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_obv_hand_trace() -> None:
+    """OBV on a hand-constructed up/down/flat 4-bar sequence.
+
+    Bar 0: base (no prev_close) -> direction=0, OBV=0
+    Bar 1: close UP   -> OBV += vol_1  -> OBV = 1000
+    Bar 2: close DOWN -> OBV -= vol_2  -> OBV = 1000 - 500 = 500
+    Bar 3: close FLAT -> OBV unchanged -> OBV = 500
+    """
+    df = pd.DataFrame(
+        {
+            "open": [10.0, 10.0, 11.0, 10.5],
+            "high": [10.5, 11.5, 11.5, 11.0],
+            "low": [9.5, 10.5, 10.0, 10.0],
+            "close": [10.0, 11.0, 10.5, 10.5],
+            "volume": [500, 1000, 500, 200],
+        }
+    )
+    result = obv(df)
+    expected = [0, 1000, 500, 500]
+    np.testing.assert_array_equal(result.values, expected)
+
+
+@pytest.mark.unit
+def test_dollar_volume_formula(flat_df: pd.DataFrame) -> None:
+    """dollar_volume = close * volume; verify on the flat fixture."""
+    dv = dollar_volume(flat_df)
+    expected = flat_df["close"] * flat_df["volume"]
+    np.testing.assert_allclose(dv.values, expected.values, rtol=1e-9)
+    # Spot-check: 50.0 * 1_000_000 = 50_000_000
+    assert dv.iloc[0] == pytest.approx(50_000_000.0)
+
+
+@pytest.mark.unit
+def test_relative_volume_unity_when_volume_equals_avg(flat_df: pd.DataFrame) -> None:
+    """RVOL on a constant-volume series = 1.0 for all valid bars."""
+    rvol = relative_volume(flat_df, period=20)
+    valid = rvol.dropna()
+    np.testing.assert_allclose(valid.values, 1.0, rtol=1e-9)
+
+
+@pytest.mark.unit
+def test_relative_volume_warmup_returns_nan(flat_df: pd.DataFrame) -> None:
+    """RVOL first (period - 1) values must be NaN."""
+    rvol = relative_volume(flat_df, period=20)
+    assert rvol.iloc[:19].isna().all()
+
+
+@pytest.mark.unit
+def test_mfi_reference_formula_cross_check() -> None:
+    """MFI on a hand-constructed 20-bar series against the reference formula.
+
+    Replicates the same style as test_rsi_known_value_reference (Phase 5):
+    compute an independent reference via the same formula steps and assert
+    the function matches to floating-point precision.
+    """
+    rng = np.random.default_rng(42)
+    n = 20
+    close = 100.0 + np.cumsum(rng.normal(0, 1, n))
+    high = close + rng.uniform(0.5, 2.0, n)
+    low = close - rng.uniform(0.5, 2.0, n)
+    volume = rng.integers(500_000, 2_000_000, n).astype(float)
+    df = pd.DataFrame(
+        {
+            "open": close - 0.5,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+        }
+    )
+
+    result = mfi(df, period=14)
+
+    # Independent reference computation
+    tp = (high + low + close) / 3.0
+    raw_mf = tp * volume
+    prev_tp = np.concatenate([[np.nan], tp[:-1]])
+    pos_mf = np.where(tp > prev_tp, raw_mf, 0.0)
+    neg_mf = np.where(tp < prev_tp, raw_mf, 0.0)
+
+    pos_s = pd.Series(pos_mf).rolling(window=14, min_periods=14).sum()
+    neg_s = pd.Series(neg_mf).rolling(window=14, min_periods=14).sum()
+    ratio = pos_s / neg_s
+    ref = 100.0 - (100.0 / (1.0 + ratio))
+    ref = ref.where(neg_s != 0.0, other=100.0)
+
+    valid_result = result.dropna()
+    valid_ref = ref.dropna()
+    assert len(valid_result) == len(valid_ref)
+    np.testing.assert_allclose(valid_result.values, valid_ref.values, rtol=1e-9)
+    # MFI values must be in [0, 100]
+    assert (valid_result >= 0.0).all() and (valid_result <= 100.0).all()
