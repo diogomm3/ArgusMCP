@@ -12,13 +12,12 @@ Design boundary (enforced here):
 """
 
 from mcp_finance.indicators.functions import atr, ema, macd, rsi
-from mcp_finance.indicators.models import Candidate
+from mcp_finance.indicators.models import Candidate, Level, LevelType
 from mcp_finance.indicators.snapshot import (
     SymbolNotCachedError,
     build_candidate_snapshot,
 )
 from mcp_finance.indicators.structure import (
-    Level,
     distance_to_level,
     gap_analysis,
     gap_pct,
@@ -37,6 +36,7 @@ __all__ = [
     "SymbolNotCachedError",
     "build_candidate_snapshot",
     "Level",
+    "LevelType",
     "swing_highs_lows",
     "market_structure",
     "support_resistance_levels",

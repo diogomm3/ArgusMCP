@@ -14,34 +14,15 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field
 
-LevelType = Literal["SUPPORT", "RESISTANCE", "PIVOT"]
+from mcp_finance.indicators.models import Level, LevelType
+
 MarketStructure = Literal[
     "higher_highs_higher_lows",
     "lower_highs_lower_lows",
     "ranging",
     "insufficient_data",
 ]
-
-
-class Level(BaseModel):
-    """Support, resistance, or polarity pivot level.
-
-    Attributes:
-        price: Representative price for the cluster (volume/touch-weighted or mean).
-        level_type: "SUPPORT" (swing lows only), "RESISTANCE" (swing highs only),
-                    or "PIVOT" (both swing highs and swing lows; polarity flip).
-        touches: Number of swing points contributing to this level.
-        min_price: Lowest price in the cluster.
-        max_price: Highest price in the cluster.
-    """
-
-    price: Decimal = Field(..., description="Representative price of the level")
-    level_type: LevelType = Field(..., description="SUPPORT, RESISTANCE, or PIVOT")
-    touches: int = Field(..., ge=1, description="Number of swing touches clustered")
-    min_price: Decimal = Field(..., description="Lowest touch price in cluster")
-    max_price: Decimal = Field(..., description="Highest touch price in cluster")
 
 
 def swing_highs_lows(df: pd.DataFrame, lookback: int = 5) -> pd.DataFrame:

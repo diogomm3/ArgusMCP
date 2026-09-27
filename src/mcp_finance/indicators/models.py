@@ -14,6 +14,7 @@ read from these fields, never issuing a second OhlcvRepository.fetch_range call.
 
 import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -103,4 +104,39 @@ class Candidate(BaseModel):
     bars_available: int = Field(
         ...,
         description="Number of cached OHLCV bars used to compute the indicators",
+    )
+
+
+LevelType = Literal["SUPPORT", "RESISTANCE", "PIVOT"]
+
+
+class Level(BaseModel):
+    """Support, resistance, or polarity pivot level.
+
+    Clusters swing points within a tolerance band into a representative price level.
+    """
+
+    price: Decimal = Field(
+        ...,
+        description="Representative price of the level",
+    )
+    level_type: LevelType = Field(
+        ...,
+        description=(
+            "Type of level: 'SUPPORT' (swing lows only), 'RESISTANCE' "
+            "(swing highs only), or 'PIVOT' (both; polarity flip)"
+        ),
+    )
+    touches: int = Field(
+        ...,
+        ge=1,
+        description="Number of swing touches contributing to this level",
+    )
+    min_price: Decimal = Field(
+        ...,
+        description="Lowest touch price in the cluster",
+    )
+    max_price: Decimal = Field(
+        ...,
+        description="Highest touch price in the cluster",
     )
