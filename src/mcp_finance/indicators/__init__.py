@@ -17,6 +17,16 @@ from mcp_finance.indicators.snapshot import (
     SymbolNotCachedError,
     build_candidate_snapshot,
 )
+from mcp_finance.indicators.structure import (
+    Level,
+    distance_to_level,
+    gap_analysis,
+    gap_pct,
+    market_structure,
+    support_resistance_levels,
+    swing_highs_lows,
+    week_52_high_low,
+)
 
 __all__ = [
     "ema",
@@ -26,4 +36,12 @@ __all__ = [
     "Candidate",
     "SymbolNotCachedError",
     "build_candidate_snapshot",
+    "Level",
+    "swing_highs_lows",
+    "market_structure",
+    "support_resistance_levels",
+    "gap_pct",
+    "gap_analysis",
+    "distance_to_level",
+    "week_52_high_low",
 ]
