@@ -36,6 +36,8 @@ def swing_highs_lows(df: pd.DataFrame, lookback: int = 5) -> pd.DataFrame:
     Note on boundary bars:
       The most recent `lookback` bars cannot be confirmed swing points because
       future bars are not yet known. They are set to False/NaN.
+      This inherent confirmation lag means market structure and levels describe
+      the confirmed state as of t - lookback, not real-time intraday ticks.
 
     Returns:
         DataFrame with columns:

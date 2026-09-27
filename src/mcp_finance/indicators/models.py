@@ -106,6 +106,133 @@ class Candidate(BaseModel):
         description="Number of cached OHLCV bars used to compute the indicators",
     )
 
+    # -----------------------------------------------------------------------
+    # M1.2 — Trend extensions
+    # -----------------------------------------------------------------------
+
+    ema_9: Decimal | None = Field(
+        default=None,
+        description="EMA-9. None if < 9 bars available.",
+    )
+    ema_200: Decimal | None = Field(
+        default=None,
+        description="EMA-200. None if < 200 bars available.",
+    )
+    ema_slope_20: Decimal | None = Field(
+        default=None,
+        description=(
+            "Total pct change of EMA-20 over a 5-bar window: "
+            "(EMA[t] - EMA[t-5]) / EMA[t-5]. None if < 25 bars."
+        ),
+    )
+    ema_alignment: str | None = Field(
+        default=None,
+        description=(
+            "EMA cascade alignment across EMA-9, 20, 50, 200: "
+            "'bullish', 'bearish', or 'mixed'. None if any EMA is unavailable."
+        ),
+    )
+
+    # -----------------------------------------------------------------------
+    # M1.3 — Momentum extensions
+    # -----------------------------------------------------------------------
+
+    adx_14: Decimal | None = Field(
+        default=None,
+        description="ADX-14 (Wilder). None if < 27 bars (2*14-1).",
+    )
+    plus_di_14: Decimal | None = Field(
+        default=None,
+        description="+DI-14 (Wilder directional indicator). None if < 27 bars.",
+    )
+    minus_di_14: Decimal | None = Field(
+        default=None,
+        description="-DI-14 (Wilder directional indicator). None if < 27 bars.",
+    )
+    roc_10: Decimal | None = Field(
+        default=None,
+        description="Rate of Change over 10 bars. None if < 10 bars.",
+    )
+
+    # -----------------------------------------------------------------------
+    # M1.4 — Volatility extensions
+    # -----------------------------------------------------------------------
+
+    bb_upper_20: Decimal | None = Field(
+        default=None,
+        description="Bollinger upper band (20-period, 2 std). None if < 20 bars.",
+    )
+    bb_middle_20: Decimal | None = Field(
+        default=None,
+        description="Bollinger middle band (20-period SMA). None if < 20 bars.",
+    )
+    bb_lower_20: Decimal | None = Field(
+        default=None,
+        description="Bollinger lower band (20-period, 2 std). None if < 20 bars.",
+    )
+    bb_bandwidth_20: Decimal | None = Field(
+        default=None,
+        description=(
+            "Bollinger Bandwidth: (upper - lower) / middle. None if < 20 bars."
+        ),
+    )
+    atr_expansion_ratio: Decimal | None = Field(
+        default=None,
+        description=(
+            "ATR-14 / 50-bar rolling average of ATR-14. "
+            "None if < 64 bars (14 ATR warmup + 50 avg window)."
+        ),
+    )
+    atr_percentile_252: Decimal | None = Field(
+        default=None,
+        description=(
+            "Percentile rank of ATR-14 in its 252-bar trailing window (0–1). "
+            "None if < 266 bars (14 ATR warmup + 252 percentile window)."
+        ),
+    )
+
+    # -----------------------------------------------------------------------
+    # M1.5 — Volume extensions
+    # -----------------------------------------------------------------------
+
+    rvol_20: Decimal | None = Field(
+        default=None,
+        description="Relative volume (today / 20-day avg). None if < 20 bars.",
+    )
+    dollar_volume: Decimal | None = Field(
+        default=None,
+        description="Dollar volume (close * volume) on as_of_date.",
+    )
+    obv: Decimal | None = Field(
+        default=None,
+        description="On-Balance Volume on as_of_date.",
+    )
+    mfi_14: Decimal | None = Field(
+        default=None,
+        description="Money Flow Index-14. None if < 14 bars.",
+    )
+
+    # -----------------------------------------------------------------------
+    # M1.1 — Market structure extensions
+    # -----------------------------------------------------------------------
+
+    market_structure: str | None = Field(
+        default=None,
+        description=(
+            "Market structure classification: 'higher_highs_higher_lows', "
+            "'lower_highs_lower_lows', 'ranging', or None (insufficient history "
+            "— build_candidate_snapshot maps 'insufficient_data' to None)."
+        ),
+    )
+    week_52_high: Decimal | None = Field(
+        default=None,
+        description="52-week (252-bar) rolling high. None if < 252 bars.",
+    )
+    week_52_low: Decimal | None = Field(
+        default=None,
+        description="52-week (252-bar) rolling low. None if < 252 bars.",
+    )
+
 
 LevelType = Literal["SUPPORT", "RESISTANCE", "PIVOT"]
 

@@ -15,8 +15,26 @@ import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mcp_finance.db.repository import OhlcvRepository, SymbolRepository
-from mcp_finance.indicators.functions import atr, ema, macd, rsi
+from mcp_finance.indicators.functions import (
+    adx,
+    atr,
+    atr_expansion_ratio,
+    bollinger_bands,
+    bollinger_bandwidth,
+    dollar_volume,
+    ema,
+    ema_alignment,
+    ema_slope,
+    macd,
+    mfi,
+    obv,
+    relative_volume,
+    roc,
+    rolling_percentile,
+    rsi,
+)
 from mcp_finance.indicators.models import Candidate
+from mcp_finance.indicators.structure import market_structure, week_52_high_low
 from mcp_finance.market_data.utils import derive_exchange
 
 
@@ -64,7 +82,7 @@ async def build_candidate_snapshot(
     *,
     exchange: str | None = None,
     source: str = "yfinance",
-    lookback_days: int = 365,
+    lookback_days: int = 400,
 ) -> Candidate:
     """Build a Candidate technical snapshot for a symbol from cached OHLCV.
 
@@ -82,8 +100,13 @@ async def build_candidate_snapshot(
                        automatically via derive_exchange(symbol).
         source:        OHLCV source to read. Defaults to "yfinance". Passed
                        EXPLICITLY to fetch_range — never left implicit.
-        lookback_days: How many calendar days of history to load (default 365,
-                       ~252 trading days — enough for EMA-200 with margin).
+        lookback_days: How many calendar days of history to load.
+                       Default raised from 365 to 400 in M1.6 to guarantee
+                       ≥252 trading bars (the widest window required by
+                       rolling_percentile(ATR, 252) and EMA-200). With ~252
+                       trading days per year, 400 calendar days provides
+                       roughly 285 trading bars — enough margin for holidays
+                       and weekends without over-fetching.
 
     Returns:
         Candidate with computed indicators, or indicators=None if insufficient data.
@@ -136,37 +159,112 @@ async def build_candidate_snapshot(
         ]
     )
 
-    # Compute indicators — each returns None if the last value is NaN/inf.
-    ema_20_val = _last_valid(ema(df, 20))
-    ema_50_val = _last_valid(ema(df, 50))
+    # ------------------------------------------------------------------
+    # Single-pass indicator computation — no secondary DB queries allowed.
+    # ------------------------------------------------------------------
+
+    # Phase 5 core indicators
+    ema_20_series = ema(df, 20)
+    ema_50_series = ema(df, 50)
     rsi_14_val = _last_valid(rsi(df, 14))
-    atr_14_val = _last_valid(atr(df, 14))
+    atr_14_series = atr(df, 14)
+    atr_14_val = _last_valid(atr_14_series)
     macd_df = macd(df)
     macd_line_val = _last_valid(macd_df["macd"])
     macd_signal_val = _last_valid(macd_df["signal"])
     macd_hist_val = _last_valid(macd_df["histogram"])
 
+    # M1.2 — Trend extensions
+    ema_9_series = ema(df, 9)
+    ema_200_series = ema(df, 200)
+    ema_9_val = _last_valid(ema_9_series)
+    ema_20_val = _last_valid(ema_20_series)
+    ema_50_val = _last_valid(ema_50_series)
+    ema_200_val = _last_valid(ema_200_series)
+    ema_slope_20_val = _last_valid(ema_slope(ema_20_series, lookback_bars=5))
+    ema_align_val = ema_alignment(ema_9_val, ema_20_val, ema_50_val, ema_200_val)
+
+    # M1.3 — Momentum extensions
+    adx_df = adx(df, period=14)
+    adx_val = _last_valid(adx_df["adx"])
+    plus_di_val = _last_valid(adx_df["plus_di"])
+    minus_di_val = _last_valid(adx_df["minus_di"])
+    roc_10_val = _last_valid(roc(df, period=10))
+
+    # M1.4 — Volatility extensions
+    bb_df = bollinger_bands(df, period=20, num_std=2.0)
+    bb_upper_val = _last_valid(bb_df["upper"])
+    bb_middle_val = _last_valid(bb_df["middle"])
+    bb_lower_val = _last_valid(bb_df["lower"])
+    bb_bw_val = _last_valid(bollinger_bandwidth(bb_df))
+    atr_exp_val = _last_valid(atr_expansion_ratio(atr_14_series, avg_period=50))
+    atr_pct_val = _last_valid(rolling_percentile(atr_14_series, window=252))
+
+    # M1.5 — Volume extensions
+    rvol_20_val = _last_valid(relative_volume(df, period=20))
+    dv_val = _last_valid(dollar_volume(df))
+    obv_val = _last_valid(obv(df))
+    mfi_14_val = _last_valid(mfi(df, period=14))
+
+    # M1.1 — Market structure extensions
+    ms_raw = market_structure(df)
+    # "insufficient_data" maps to None per codebase contract (None = no data).
+    ms_val: str | None = None if ms_raw == "insufficient_data" else ms_raw
+    # week_52_high_low returns tuple[Decimal, Decimal] — unpack directly.
+    w52_high_dec, w52_low_dec = week_52_high_low(df, window_bars=252)
+    w52_high_val: Decimal | None = w52_high_dec
+    w52_low_val: Decimal | None = w52_low_dec
+
+    # Volume (already in single pass above)
     last_close = float(bars[-1].close)
     last_volume = int(bars[-1].volume)
     avg_vol_20 = int(df["volume"].tail(20).mean()) if bars_available >= 20 else None
+
+    def _d(v: float | None) -> Decimal | None:
+        return _to_decimal(v) if v is not None else None
 
     return Candidate(
         symbol=symbol,
         as_of_date=as_of_date,
         source=source,
         close=_to_decimal(last_close),
-        rsi_14=_to_decimal(rsi_14_val) if rsi_14_val is not None else None,
-        ema_20=_to_decimal(ema_20_val) if ema_20_val is not None else None,
-        ema_50=_to_decimal(ema_50_val) if ema_50_val is not None else None,
-        atr_14=_to_decimal(atr_14_val) if atr_14_val is not None else None,
-        macd_line=_to_decimal(macd_line_val) if macd_line_val is not None else None,
-        macd_signal=(
-            _to_decimal(macd_signal_val) if macd_signal_val is not None else None
-        ),
-        macd_histogram=(
-            _to_decimal(macd_hist_val) if macd_hist_val is not None else None
-        ),
+        # Phase 5 core
+        rsi_14=_d(rsi_14_val),
+        ema_20=_d(ema_20_val),
+        ema_50=_d(ema_50_val),
+        atr_14=_d(atr_14_val),
+        macd_line=_d(macd_line_val),
+        macd_signal=_d(macd_signal_val),
+        macd_histogram=_d(macd_hist_val),
         volume=last_volume,
         avg_volume_20=avg_vol_20,
         bars_available=bars_available,
+        # M1.2 trend
+        ema_9=_d(ema_9_val),
+        ema_200=_d(ema_200_val),
+        ema_slope_20=_d(ema_slope_20_val),
+        ema_alignment=ema_align_val
+        if any(v is not None for v in [ema_9_val, ema_20_val, ema_50_val, ema_200_val])
+        else None,
+        # M1.3 momentum
+        adx_14=_d(adx_val),
+        plus_di_14=_d(plus_di_val),
+        minus_di_14=_d(minus_di_val),
+        roc_10=_d(roc_10_val),
+        # M1.4 volatility
+        bb_upper_20=_d(bb_upper_val),
+        bb_middle_20=_d(bb_middle_val),
+        bb_lower_20=_d(bb_lower_val),
+        bb_bandwidth_20=_d(bb_bw_val),
+        atr_expansion_ratio=_d(atr_exp_val),
+        atr_percentile_252=_d(atr_pct_val),
+        # M1.5 volume
+        rvol_20=_d(rvol_20_val),
+        dollar_volume=_d(dv_val),
+        obv=_d(obv_val),
+        mfi_14=_d(mfi_14_val),
+        # M1.1 market structure
+        market_structure=ms_val,
+        week_52_high=w52_high_val,
+        week_52_low=w52_low_val,
     )

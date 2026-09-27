@@ -432,6 +432,17 @@ async def test_build_candidate_snapshot_insufficient_data(
     assert candidate.macd_line is None
     assert candidate.macd_signal is None
     assert candidate.macd_histogram is None
+    assert candidate.ema_9 is None
+    assert candidate.ema_200 is None
+    assert candidate.ema_slope_20 is None
+    assert candidate.ema_alignment is None
+    assert candidate.adx_14 is None
+    assert candidate.roc_10 is None
+    assert candidate.bb_upper_20 is None
+    assert candidate.atr_percentile_252 is None
+    assert candidate.rvol_20 is None
+    assert candidate.market_structure is None
+    assert candidate.week_52_high is None
 
 
 @pytest.mark.unit
@@ -607,6 +618,131 @@ async def test_build_candidate_snapshot_partial_warmup_30_bars(
     assert candidate.macd_line is not None  # 30 >= 26
     assert candidate.macd_signal is None  # 30 < 34 bars for signal warmup
     assert candidate.macd_histogram is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_build_candidate_snapshot_m1_indicators_full_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """300-bar fixture: all M1 indicator fields are populated and valid."""
+    session = AsyncMock()
+    bars = _make_bars(300, base_close=100.0)
+
+    symbol_row = MagicMock()
+    symbol_row.id = 99
+
+    symbol_repo_mock = AsyncMock()
+    symbol_repo_mock.get_by_ticker = AsyncMock(return_value=symbol_row)
+
+    ohlcv_repo_mock = AsyncMock()
+    ohlcv_repo_mock.fetch_range = AsyncMock(return_value=bars)
+
+    monkeypatch.setattr(
+        "mcp_finance.indicators.snapshot.SymbolRepository",
+        lambda _session: symbol_repo_mock,
+    )
+    monkeypatch.setattr(
+        "mcp_finance.indicators.snapshot.OhlcvRepository",
+        lambda _session: ohlcv_repo_mock,
+    )
+
+    candidate = await build_candidate_snapshot(
+        "NVDA",
+        datetime.date(2024, 3, 1),
+        session,
+        source="yfinance",
+    )
+
+    assert candidate.symbol == "NVDA"
+    assert candidate.bars_available == 300
+
+    # Trend extensions
+    assert candidate.ema_9 is not None
+    assert candidate.ema_20 is not None
+    assert candidate.ema_50 is not None
+    assert candidate.ema_200 is not None
+    assert candidate.ema_slope_20 is not None
+    assert candidate.ema_alignment == "bullish"
+
+    # Momentum
+    assert candidate.adx_14 is not None
+    assert candidate.plus_di_14 is not None
+    assert candidate.minus_di_14 is not None
+    assert candidate.roc_10 is not None
+
+    # Volatility
+    assert candidate.bb_upper_20 is not None
+    assert candidate.bb_middle_20 is not None
+    assert candidate.bb_lower_20 is not None
+    assert candidate.bb_bandwidth_20 is not None
+    assert candidate.atr_percentile_252 is not None
+    assert candidate.atr_expansion_ratio is not None
+
+    # Volume
+    assert candidate.rvol_20 is not None
+    assert candidate.dollar_volume is not None
+    assert candidate.mfi_14 is not None
+    assert candidate.obv is not None
+
+    # Market structure
+    assert candidate.week_52_high is not None
+    assert candidate.week_52_low is not None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_build_candidate_snapshot_m1_indicators_underwarmed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """30-bar fixture: short-window indicators populate,
+    long-window indicators are None.
+    """
+    session = AsyncMock()
+    bars = _make_bars(30, base_close=100.0)
+
+    symbol_row = MagicMock()
+    symbol_row.id = 100
+
+    symbol_repo_mock = AsyncMock()
+    symbol_repo_mock.get_by_ticker = AsyncMock(return_value=symbol_row)
+
+    ohlcv_repo_mock = AsyncMock()
+    ohlcv_repo_mock.fetch_range = AsyncMock(return_value=bars)
+
+    monkeypatch.setattr(
+        "mcp_finance.indicators.snapshot.SymbolRepository",
+        lambda _session: symbol_repo_mock,
+    )
+    monkeypatch.setattr(
+        "mcp_finance.indicators.snapshot.OhlcvRepository",
+        lambda _session: ohlcv_repo_mock,
+    )
+
+    candidate = await build_candidate_snapshot(
+        "NVDA",
+        datetime.date(2024, 3, 1),
+        session,
+        source="yfinance",
+    )
+
+    assert candidate.bars_available == 30
+
+    # 30 bars is enough for EMA-9, EMA-20
+    assert candidate.ema_9 is not None
+    assert candidate.ema_20 is not None
+
+    # 30 bars is not enough for EMA-50, EMA-200
+    assert candidate.ema_50 is None
+    assert candidate.ema_200 is None
+    assert candidate.ema_alignment == "mixed"
+
+    # 30 bars is enough for ROC-10
+    assert candidate.roc_10 is not None
+
+    # 30 bars is not enough for 252-day ATR percentile or 50-day expansion ratio
+    assert candidate.atr_expansion_ratio is None
+    assert candidate.atr_percentile_252 is None
 
 
 # ---------------------------------------------------------------------------
