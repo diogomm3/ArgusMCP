@@ -52,6 +52,7 @@ from mcp_finance.indicators.structure import (
     week_52_high_low,
 )
 from mcp_finance.indicators.volume_profile import build_volume_profile
+from mcp_finance.indicators.vwap import anchored_vwap, price_vs_vwap_distance
 
 __all__ = [
     # Phase 5 core
@@ -94,4 +95,7 @@ __all__ = [
     "VolumeBin",
     "VolumeProfile",
     "build_volume_profile",
+    # M3 Anchored VWAP
+    "anchored_vwap",
+    "price_vs_vwap_distance",
 ]
