@@ -506,7 +506,7 @@ Conventional Commits with scope:
 ```
 
 Types: `feat`, `fix`, `test`, `refactor`, `style`, `chore`, `build`, `docs`, `ci`.
-Scopes: `risk`, `brokers`, `market_data`, `fundamentals`, `screener`, `charting`, `db`.
+Scopes: `risk`, `brokers`, `market_data`, `fundamentals`, `screener`, `charting`, `db`, `indicators`.
 
 One logical change per commit.
 
