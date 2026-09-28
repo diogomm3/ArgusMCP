@@ -23,7 +23,7 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 
-from mcp_finance.indicators.functions import price_vs_ema_distance
+from mcp_finance.indicators.structure import distance_to_level
 
 
 def anchored_vwap(
@@ -61,9 +61,10 @@ def anchored_vwap(
 
     Raises:
         ValueError: On empty df, missing required columns, duplicate dates, invalid
-            date format, anchor_date after the latest bar, or zero total volume
-            from anchor onward. An anchor before the earliest bar forward-snaps
-            to bar 0 (same semantics as a non-trading-day anchor).
+            date format, anchor_date strictly before the earliest bar, anchor_date
+            after the latest bar, or zero total volume from anchor onward.
+            Forward-snap applies only when anchor_date is within the series range
+            (i.e. >= first bar) but falls on a non-trading day.
     """
     if df.empty:
         raise ValueError("df cannot be empty")
@@ -106,15 +107,21 @@ def anchored_vwap(
     else:
         work_df = df
 
+    earliest_date = norm_dates.iloc[0]
     latest_date = norm_dates.iloc[-1]
 
-    # Forward-snap: locate first trading bar on or after target_anchor
-    mask_anchor = norm_dates >= target_anchor
-    if not mask_anchor.any():
+    if target_anchor > latest_date:
         raise ValueError(
             f"anchor_date {anchor_date} is after latest bar ({latest_date.date()})"
         )
+    if target_anchor < earliest_date:
+        raise ValueError(
+            f"anchor_date {anchor_date} is before earliest bar "
+            f"({earliest_date.date()}). Extend cache with --days."
+        )
 
+    # Forward-snap: first trading bar on or after target_anchor (within-range gaps only)
+    mask_anchor = norm_dates >= target_anchor
     anchor_idx = int(mask_anchor.to_numpy().argmax())
 
     post_anchor_vols = work_df["volume"].iloc[anchor_idx:].to_numpy(dtype=float)
@@ -177,4 +184,4 @@ def price_vs_vwap_distance(
     Raises:
         ValueError: If vwap_val is <= 0.
     """
-    return price_vs_ema_distance(price, vwap_val, atr_val=atr_val)
+    return distance_to_level(price, vwap_val, atr=atr_val)

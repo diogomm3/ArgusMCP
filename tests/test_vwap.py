@@ -10,10 +10,13 @@ Tests cover:
   7. Missing required columns raises ValueError
   8. Duplicate dates raises ValueError
   9. Anchor after latest bar raises ValueError
- 10. Anchor before earliest bar forward-snaps to bar 0 (same rule as a weekend anchor)
+ 10. Anchor before earliest bar raises ValueError (forward-snap is within-series only)
  11. Unsorted input: result is correctly aligned to original (unsorted) index
  12. DatetimeIndex input (no 'date' column)
- 13. price_vs_vwap_distance delegates to price_vs_ema_distance (sign, pct, atr-norm)
+ 13. datetime64 column in 'date' column (pd.Timestamp objects stored in column)
+ 14. Invalid ISO string anchor_date raises ValueError
+ 15. price_vs_vwap_distance: sign, pct, atr-norm, zero-vwap raises
+ 16. price_vs_vwap_distance agrees with distance_to_level (delegation contract)
 """
 
 from __future__ import annotations
@@ -25,6 +28,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from mcp_finance.indicators.structure import distance_to_level
 from mcp_finance.indicators.vwap import anchored_vwap, price_vs_vwap_distance
 
 # ---------------------------------------------------------------------------
@@ -120,27 +124,33 @@ def test_four_bar_mid_anchor() -> None:
 
 
 def test_forward_snap_weekend() -> None:
-    """Anchor on Saturday 2024-01-06 snaps to Monday 2024-01-08."""
-    # First available bar after the weekend.
-    dates = ["2024-01-08", "2024-01-09", "2024-01-10"]
+    """Anchor on Saturday 2024-01-06 snaps to Monday 2024-01-08.
+
+    The Saturday anchor is within the series range because the series includes
+    a Friday 2024-01-05 bar before the weekend. Forward-snap is applicable:
+    no trading happened between Friday's close and Monday's open.
+    """
+    # Series: Fri 2024-01-05, Mon 2024-01-08, Tue 2024-01-09, Wed 2024-01-10
+    dates = ["2024-01-05", "2024-01-08", "2024-01-09", "2024-01-10"]
     df = _make_df(
         dates,
-        highs=[110.0, 112.0, 111.0],
-        lows=[108.0, 110.0, 109.0],
-        closes=[109.0, 111.0, 110.0],
-        volumes=[1000.0, 2000.0, 1500.0],
+        highs=[108.0, 110.0, 112.0, 111.0],
+        lows=[106.0, 108.0, 110.0, 109.0],
+        closes=[107.0, 109.0, 111.0, 110.0],
+        volumes=[500.0, 1000.0, 2000.0, 1500.0],
     )
 
-    # Anchor on Saturday — should forward-snap to Monday 2024-01-08
+    # Anchor on Saturday 2024-01-06 — inside the range (Fri..Wed), snaps to Mon
     result = anchored_vwap(df, anchor_date="2024-01-06")
 
-    assert not np.isnan(result.iloc[0]), "Snapped bar (Mon) must have a valid AVWAP"
-    expected_tp0 = (110.0 + 108.0 + 109.0) / 3.0
+    assert np.isnan(result.iloc[0]), "Friday (pre-anchor) must be NaN"
+    assert not np.isnan(result.iloc[1]), "Monday (snapped bar) must have valid AVWAP"
+    expected_tp_mon = (110.0 + 108.0 + 109.0) / 3.0
     np.testing.assert_allclose(
-        result.iloc[0],
-        expected_tp0,
+        result.iloc[1],
+        expected_tp_mon,
         rtol=1e-9,
-        err_msg="Single-bar AVWAP at anchor = TP of that bar",
+        err_msg="Single-bar AVWAP at snap = TP of that bar",
     )
 
 
@@ -281,24 +291,18 @@ def test_anchor_after_latest_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_anchor_before_earliest_snaps_to_first_bar() -> None:
-    """An anchor before the earliest bar forward-snaps to bar 0.
+def test_anchor_before_earliest_raises() -> None:
+    """An anchor strictly before the earliest bar raises ValueError.
 
-    Same semantics as a non-trading-day anchor: the forward-snap rule states
-    that AVWAP begins at the first available trading bar on or after anchor_date.
-    When anchor_date < earliest bar, every bar satisfies >= anchor_date, so bar 0
-    is selected as the anchor and all bars receive valid AVWAP values.
+    Forward-snap is only for non-trading gaps *within* the series range
+    (e.g. weekends, holidays between two recorded bars). If anchor_date is
+    before the first bar, the cache doesn't hold the volume that accumulated
+    between the event and bar 0 — silently snapping would return a plausible
+    but incorrect AVWAP (wrong because pre-cache volume is missing).
     """
     df = _make_df(FOUR_BAR_DATES, FOUR_BAR_H, FOUR_BAR_L, FOUR_BAR_C, FOUR_BAR_V)
-    result = anchored_vwap(df, anchor_date="2023-01-01")
-
-    # All bars should be valid (no pre-anchor NaN)
-    assert not result.isna().any(), (
-        "Snap-to-first-bar must produce all-valid AVWAP series"
-    )
-    # First bar AVWAP == TP of that bar
-    expected_tp0 = (FOUR_BAR_H[0] + FOUR_BAR_L[0] + FOUR_BAR_C[0]) / 3.0
-    np.testing.assert_allclose(result.iloc[0], expected_tp0, rtol=1e-9)
+    with pytest.raises(ValueError, match="[Bb]efore"):
+        anchored_vwap(df, anchor_date="2023-01-01")
 
 
 # ---------------------------------------------------------------------------
@@ -353,7 +357,47 @@ def test_datetime_index_input() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 13 — price_vs_vwap_distance: delegation contract
+# Test 13 — datetime64 column ('date' column holds pd.Timestamp objects)
+# ---------------------------------------------------------------------------
+
+
+def test_datetime64_column_input() -> None:
+    """'date' column holding pd.Timestamp (datetime64) values is accepted.
+
+    The _make_df helper stores datetime.date objects; this test explicitly stores
+    pd.Timestamp objects to cover the datetime64 column path that pd.to_datetime
+    must handle (e.g. data coming from a DataFrame loaded with parse_dates=True).
+    """
+    parsed = [pd.Timestamp(d) for d in FOUR_BAR_DATES]
+    df = pd.DataFrame(
+        {
+            "date": parsed,  # dtype will be datetime64[ns]
+            "high": FOUR_BAR_H,
+            "low": FOUR_BAR_L,
+            "close": FOUR_BAR_C,
+            "volume": FOUR_BAR_V,
+        }
+    )
+    result = anchored_vwap(df, anchor_date="2024-01-02")
+
+    assert len(result) == 4
+    np.testing.assert_allclose(result.to_numpy(), EXPECTED_AVWAP, rtol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# Test 14 — Invalid ISO string anchor_date raises ValueError
+# ---------------------------------------------------------------------------
+
+
+def test_invalid_anchor_date_string_raises() -> None:
+    """An unparseable anchor_date string raises ValueError."""
+    df = _make_df(FOUR_BAR_DATES, FOUR_BAR_H, FOUR_BAR_L, FOUR_BAR_C, FOUR_BAR_V)
+    with pytest.raises(ValueError, match="[Ii]nvalid"):
+        anchored_vwap(df, anchor_date="2024-13-45")
+
+
+# ---------------------------------------------------------------------------
+# Test 15 — price_vs_vwap_distance: delegation contract
 # ---------------------------------------------------------------------------
 
 
@@ -392,3 +436,26 @@ def test_price_vs_vwap_distance_zero_vwap_raises() -> None:
     """vwap_val == 0 must raise ValueError (division by zero)."""
     with pytest.raises(ValueError):
         price_vs_vwap_distance(Decimal("100"), Decimal("0"))
+
+
+# ---------------------------------------------------------------------------
+# Test 16 — price_vs_vwap_distance agrees with distance_to_level
+# ---------------------------------------------------------------------------
+
+
+def test_price_vs_vwap_distance_agrees_with_distance_to_level() -> None:
+    """price_vs_vwap_distance delegates to distance_to_level.
+
+    Asserts that price_vs_vwap_distance and a direct call to distance_to_level
+    return identical results for the same inputs, confirming the delegation
+    contract rather than just testing the arithmetic.
+    """
+    price = Decimal("115")
+    vwap = Decimal("100")
+    atr = Decimal("8")
+
+    vwap_pct, vwap_atr = price_vs_vwap_distance(price, vwap, atr_val=atr)
+    level_pct, level_atr = distance_to_level(price, vwap, atr=atr)
+
+    assert vwap_pct == level_pct, "pct distance must be identical"
+    assert vwap_atr == level_atr, "atr distance must be identical"
