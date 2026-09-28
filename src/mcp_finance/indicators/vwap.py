@@ -117,7 +117,8 @@ def anchored_vwap(
     if target_anchor < earliest_date:
         raise ValueError(
             f"anchor_date {anchor_date} is before earliest bar "
-            f"({earliest_date.date()}). Extend cache with --days."
+            f"({earliest_date.date()}). Extend cache with batch ingestion: "
+            f"python -m mcp_finance.market_data.batch --days <N>."
         )
 
     # Forward-snap: first trading bar on or after target_anchor (within-range gaps only)
