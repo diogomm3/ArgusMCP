@@ -34,7 +34,7 @@ jobs:
         DATABASE_URL: postgresql+asyncpg://ci:ci@localhost/ci
       run: mypy src/
 
-    - name: Run pytest (unit tests only)
+    - name: Run pytest (unit and DB tests)
       env:
         TRADING212_API_KEY: ci-dummy
         TRADING212_API_SECRET: ci-dummy
