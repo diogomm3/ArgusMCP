@@ -46,21 +46,58 @@ BENCHMARK_SYMBOLS: list[str] = [
 ]
 
 # SPDR Sector ETF map: sector label → ETF ticker
-# Coverage: all 11 GICS sectors available via SPDR suite.
-# Used for sector-regime classification in M4.3.
+# Covers all 11 FMP profile sector labels (as returned by FMP API) plus standard
+# GICS aliases for cross-provider compatibility.
+# Observed from live FMP API profile calls:
+#   - "Technology" -> XLK
+#   - "Consumer Cyclical" -> XLY (e.g. AMZN)
+#   - "Communication Services" -> XLC (e.g. GOOGL)
+# Assumed standard FMP profile sector names (canonical in FMP profile endpoint):
+#   - "Financial Services", "Consumer Defensive", "Healthcare", "Energy",
+#     "Industrials", "Basic Materials", "Real Estate", "Utilities"
 SECTOR_ETF_MAP: dict[str, str] = {
+    # 11 FMP profile sector labels
     "Technology": "XLK",
+    "Financial Services": "XLF",
+    "Consumer Cyclical": "XLY",
+    "Consumer Defensive": "XLP",
     "Healthcare": "XLV",
-    "Financials": "XLF",
-    "Consumer Discretionary": "XLY",
-    "Consumer Staples": "XLP",
     "Energy": "XLE",
     "Industrials": "XLI",
-    "Materials": "XLB",
+    "Basic Materials": "XLB",
     "Real Estate": "XLRE",
     "Utilities": "XLU",
     "Communication Services": "XLC",
+    # GICS standard names / aliases
+    "Information Technology": "XLK",
+    "Financials": "XLF",
+    "Consumer Discretionary": "XLY",
+    "Consumer Staples": "XLP",
+    "Health Care": "XLV",
+    "Materials": "XLB",
 }
+
+
+def get_sector_etf(sector: str | None) -> str | None:
+    """Return the SPDR ETF ticker for a given sector name, or None if unmapped."""
+    if not sector:
+        return None
+    return SECTOR_ETF_MAP.get(sector)
+
+
+# ---------------------------------------------------------------------------
+# Default ingestion watchlist: deduplicated union of DEFAULT_WATCHLIST,
+# BENCHMARK_SYMBOLS, and SECTOR_ETF_MAP unique values (23 tickers total).
+# Order: stock watchlist first, then benchmarks, then sector ETFs.
+# ---------------------------------------------------------------------------
+_seen_symbols: set[str] = set()
+INGESTION_WATCHLIST: list[str] = []
+for _sym in (
+    DEFAULT_WATCHLIST + BENCHMARK_SYMBOLS + list(dict.fromkeys(SECTOR_ETF_MAP.values()))
+):
+    if _sym not in _seen_symbols:
+        _seen_symbols.add(_sym)
+        INGESTION_WATCHLIST.append(_sym)
 
 
 async def run_batch_ingest(
@@ -74,7 +111,7 @@ async def run_batch_ingest(
     A deliberate delay is added between symbols to respect unauthenticated yfinance rate
     limits and avoid triggering throttling or silent empty responses.
     """
-    target_symbols = symbols if symbols is not None else DEFAULT_WATCHLIST
+    target_symbols = symbols if symbols is not None else INGESTION_WATCHLIST
     end_date = datetime.date.today()
     start_date = end_date - datetime.timedelta(days=days)
 
@@ -152,7 +189,7 @@ def main() -> None:
         type=str,
         help=(
             "Comma-separated list of symbols (e.g. AAPL,MSFT,SAP.DE). "
-            "Defaults to standard watchlist."
+            "Defaults to INGESTION_WATCHLIST (stocks + benchmarks + sector ETFs)."
         ),
         default=None,
     )
@@ -162,7 +199,7 @@ def main() -> None:
         default=400,
         help=(
             "Number of past calendar days of history to ingest (default: 400, "
-            "ensuring ≥252 trading bars for EMA-200 and rolling percentiles)."
+            "yielding ~270 trading bars, ensuring ≥252 bars for EMA-200)."
         ),
     )
     parser.add_argument(

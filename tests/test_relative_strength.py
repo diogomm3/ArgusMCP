@@ -15,32 +15,57 @@ from mcp_finance.indicators.relative_strength import (
     relative_price_ratio,
     relative_return,
 )
-from mcp_finance.market_data.batch import BENCHMARK_SYMBOLS, SECTOR_ETF_MAP
+from mcp_finance.market_data.batch import (
+    BENCHMARK_SYMBOLS,
+    DEFAULT_WATCHLIST,
+    INGESTION_WATCHLIST,
+    SECTOR_ETF_MAP,
+    get_sector_etf,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers (group-1)
 # ---------------------------------------------------------------------------
 
-_ALL_ETF_SYMBOLS: list[str] = list(BENCHMARK_SYMBOLS) + list(SECTOR_ETF_MAP.values())
+_UNIQUE_SECTOR_ETF_SYMBOLS: list[str] = list(dict.fromkeys(SECTOR_ETF_MAP.values()))
+_ALL_ETF_SYMBOLS: list[str] = list(BENCHMARK_SYMBOLS) + _UNIQUE_SECTOR_ETF_SYMBOLS
 
-# Expected 13 tickers: 2 benchmarks + 11 sector ETFs
+# Expected 13 tickers: 2 benchmarks + 11 unique sector ETFs
 _EXPECTED_COUNT = 13
 _EXPECTED_BENCHMARK_COUNT = 2
-_EXPECTED_SECTOR_COUNT = 11
+_EXPECTED_UNIQUE_SECTOR_COUNT = 11
+_EXPECTED_MAP_KEY_COUNT = 17  # 11 FMP labels + 6 GICS aliases
 
-# The 11 GICS sectors that must all be present in SECTOR_ETF_MAP
-_EXPECTED_SECTORS = {
-    "Technology",
-    "Healthcare",
-    "Financials",
-    "Consumer Discretionary",
-    "Consumer Staples",
-    "Energy",
-    "Industrials",
-    "Materials",
-    "Real Estate",
-    "Utilities",
-    "Communication Services",
+# 3 observed labels from live FMP API profile calls in this project:
+#   - Technology (AAPL, MSFT, NVDA)
+#   - Consumer Cyclical (AMZN)
+#   - Communication Services (GOOGL)
+_OBSERVED_FMP_SECTORS: dict[str, str] = {
+    "Technology": "XLK",
+    "Consumer Cyclical": "XLY",
+    "Communication Services": "XLC",
+}
+
+# 8 assumed standard FMP sector profile names (canonical FMP profile convention):
+_ASSUMED_FMP_SECTORS: dict[str, str] = {
+    "Financial Services": "XLF",
+    "Consumer Defensive": "XLP",
+    "Healthcare": "XLV",
+    "Energy": "XLE",
+    "Industrials": "XLI",
+    "Basic Materials": "XLB",
+    "Real Estate": "XLRE",
+    "Utilities": "XLU",
+}
+
+# 6 GICS standard sector aliases supported for cross-provider compatibility:
+_GICS_ALIASES: dict[str, str] = {
+    "Information Technology": "XLK",
+    "Financials": "XLF",
+    "Consumer Discretionary": "XLY",
+    "Consumer Staples": "XLP",
+    "Health Care": "XLV",
+    "Materials": "XLB",
 }
 
 
@@ -103,17 +128,44 @@ class TestSectorEtfMap:
     def test_sector_etf_map_is_dict(self) -> None:
         assert isinstance(SECTOR_ETF_MAP, dict)
 
-    def test_sector_count(self) -> None:
-        """Must cover all 11 GICS sectors."""
-        assert len(SECTOR_ETF_MAP) == _EXPECTED_SECTOR_COUNT
+    def test_sector_key_count(self) -> None:
+        """11 FMP labels + 6 GICS aliases = 17 keys."""
+        assert len(SECTOR_ETF_MAP) == _EXPECTED_MAP_KEY_COUNT
 
-    def test_all_expected_sectors_present(self) -> None:
-        missing = _EXPECTED_SECTORS - set(SECTOR_ETF_MAP.keys())
-        assert missing == set(), f"Missing GICS sectors: {missing}"
+    def test_unique_etf_count_is_11(self) -> None:
+        """Must cover exactly 11 unique SPDR sector ETF tickers."""
+        unique_tickers = set(SECTOR_ETF_MAP.values())
+        assert len(unique_tickers) == _EXPECTED_UNIQUE_SECTOR_COUNT
 
-    def test_no_unexpected_sectors(self) -> None:
-        extra = set(SECTOR_ETF_MAP.keys()) - _EXPECTED_SECTORS
-        assert extra == set(), f"Unexpected sectors in map: {extra}"
+    @pytest.mark.parametrize("sector,expected_etf", _OBSERVED_FMP_SECTORS.items())
+    def test_observed_fmp_labels_map_correctly(
+        self, sector: str, expected_etf: str
+    ) -> None:
+        """Labels observed live from FMP profile endpoint map to correct ETF."""
+        assert SECTOR_ETF_MAP[sector] == expected_etf
+        assert get_sector_etf(sector) == expected_etf
+
+    @pytest.mark.parametrize("sector,expected_etf", _ASSUMED_FMP_SECTORS.items())
+    def test_assumed_fmp_labels_map_correctly(
+        self, sector: str, expected_etf: str
+    ) -> None:
+        """Canonical assumed FMP profile sector labels map to correct ETF."""
+        assert SECTOR_ETF_MAP[sector] == expected_etf
+        assert get_sector_etf(sector) == expected_etf
+
+    @pytest.mark.parametrize("sector,expected_etf", _GICS_ALIASES.items())
+    def test_gics_aliases_map_correctly(self, sector: str, expected_etf: str) -> None:
+        """GICS standard aliases map to correct ETF for cross-provider compatibility."""
+        assert SECTOR_ETF_MAP[sector] == expected_etf
+        assert get_sector_etf(sector) == expected_etf
+
+    def test_unknown_or_none_sector_maps_to_none(self) -> None:
+        """Unknown or None sector label must map to None."""
+        assert get_sector_etf(None) is None
+        assert get_sector_etf("") is None
+        assert get_sector_etf("Unknown Sector") is None
+        assert SECTOR_ETF_MAP.get("Unknown Sector") is None
+        assert SECTOR_ETF_MAP.get("") is None
 
     def test_sector_etf_tickers_uppercase(self) -> None:
         for sector, sym in SECTOR_ETF_MAP.items():
@@ -125,12 +177,6 @@ class TestSectorEtfMap:
         for sector, sym in SECTOR_ETF_MAP.items():
             assert sym.strip(), f"Sector '{sector}' maps to empty/whitespace ticker"
 
-    def test_sector_etf_tickers_no_duplicates(self) -> None:
-        tickers = list(SECTOR_ETF_MAP.values())
-        assert len(tickers) == len(set(tickers)), (
-            "Duplicate ticker values in SECTOR_ETF_MAP"
-        )
-
     def test_sector_etf_tickers_us_only(self) -> None:
         """Sector ETFs must be US-listed (no dot suffix)."""
         for sector, sym in SECTOR_ETF_MAP.items():
@@ -138,23 +184,11 @@ class TestSectorEtfMap:
                 f"Sector '{sector}': {sym!r} contains a dot — must be US-listed"
             )
 
-    def test_xly_is_consumer_discretionary(self) -> None:
-        """Spot-check: XLY maps to Consumer Discretionary."""
-        assert SECTOR_ETF_MAP["Consumer Discretionary"] == "XLY"
-
-    def test_xlk_is_technology(self) -> None:
-        """Spot-check: XLK maps to Technology."""
-        assert SECTOR_ETF_MAP["Technology"] == "XLK"
-
     def test_sector_etf_not_in_default_watchlist(self) -> None:
-        """Sector ETFs must be kept separate from the stock watchlist."""
-        from mcp_finance.market_data.batch import DEFAULT_WATCHLIST
-
         overlap = set(SECTOR_ETF_MAP.values()) & set(DEFAULT_WATCHLIST)
         assert overlap == set(), f"Sector ETFs leaked into DEFAULT_WATCHLIST: {overlap}"
 
     def test_sector_etf_not_in_benchmark_symbols(self) -> None:
-        """Sector ETFs and benchmark symbols must be orthogonal sets."""
         overlap = set(SECTOR_ETF_MAP.values()) & set(BENCHMARK_SYMBOLS)
         assert overlap == set(), (
             f"Sector ETFs overlap with benchmark symbols: {overlap}"
@@ -162,14 +196,14 @@ class TestSectorEtfMap:
 
 
 # ---------------------------------------------------------------------------
-# Combined: 13-ticker total count
+# Combined: 13-ticker total count & INGESTION_WATCHLIST
 # ---------------------------------------------------------------------------
 
 
 class TestCombinedEtfInventory:
     def test_total_etf_count_is_13(self) -> None:
-        """BENCHMARK_SYMBOLS (2) + SECTOR_ETF_MAP values (11) = 13 tickers."""
-        total = len(BENCHMARK_SYMBOLS) + len(SECTOR_ETF_MAP)
+        """BENCHMARK_SYMBOLS (2) + unique SECTOR_ETF_MAP values (11) = 13 tickers."""
+        total = len(BENCHMARK_SYMBOLS) + len(set(SECTOR_ETF_MAP.values()))
         assert total == _EXPECTED_COUNT, (
             f"Expected {_EXPECTED_COUNT} ETF tickers total, got {total}"
         )
@@ -184,6 +218,30 @@ class TestCombinedEtfInventory:
     @pytest.mark.parametrize("sym", _ALL_ETF_SYMBOLS)
     def test_each_etf_symbol_is_non_empty_uppercase_no_dot(self, sym: str) -> None:
         assert sym and sym == sym.upper() and "." not in sym
+
+    def test_ingestion_watchlist_contains_all_components(self) -> None:
+        """INGESTION_WATCHLIST is the deduplicated union of
+        stocks, benchmarks, and ETFs.
+        """
+        assert len(INGESTION_WATCHLIST) == 23
+        assert len(INGESTION_WATCHLIST) == len(set(INGESTION_WATCHLIST))
+        # Stocks first
+        assert INGESTION_WATCHLIST[: len(DEFAULT_WATCHLIST)] == DEFAULT_WATCHLIST
+        # All benchmarks included
+        for b in BENCHMARK_SYMBOLS:
+            assert b in INGESTION_WATCHLIST
+        # All sector ETFs included
+        for s in set(SECTOR_ETF_MAP.values()):
+            assert s in INGESTION_WATCHLIST
+
+    def test_run_batch_ingest_defaults_to_ingestion_watchlist(self) -> None:
+        """When symbols is None, run_batch_ingest defaults to INGESTION_WATCHLIST."""
+        import inspect
+
+        from mcp_finance.market_data.batch import run_batch_ingest
+
+        sig = inspect.signature(run_batch_ingest)
+        assert sig.parameters["symbols"].default is None
 
 
 # ---------------------------------------------------------------------------
