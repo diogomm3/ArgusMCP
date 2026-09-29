@@ -7,8 +7,6 @@ No network calls, no database connections in any of these tests.
 """
 
 import datetime
-import math
-from decimal import Decimal
 
 import pandas as pd
 import pytest
@@ -225,11 +223,11 @@ class TestRelativeReturn:
         result = relative_return(_STOCK_DF, _BENCH_DF, period=4)
         assert result is not None
         # stock: (110-100)/100 = 0.10, bench: (204-200)/200 = 0.02, diff = 0.08
-        assert abs(float(result) - 0.08) < 1e-9
+        assert abs(result - 0.08) < 1e-9
 
-    def test_returns_decimal(self) -> None:
+    def test_returns_float(self) -> None:
         result = relative_return(_STOCK_DF, _BENCH_DF, period=4)
-        assert isinstance(result, Decimal)
+        assert isinstance(result, float)
 
     # --- Identity: stock == benchmark → relative_return == 0 ---
 
@@ -238,7 +236,7 @@ class TestRelativeReturn:
         df = _make_df(_DATES, _STOCK_CLOSES)
         result = relative_return(df, df.copy(), period=4)
         assert result is not None
-        assert float(result) == pytest.approx(0.0, abs=1e-10)
+        assert result == pytest.approx(0.0, abs=1e-10)
 
     # --- Antisymmetry: rr(A, B) == -rr(B, A) ---
 
@@ -246,7 +244,7 @@ class TestRelativeReturn:
         ab = relative_return(_STOCK_DF, _BENCH_DF, period=4)
         ba = relative_return(_BENCH_DF, _STOCK_DF, period=4)
         assert ab is not None and ba is not None
-        assert float(ab) == pytest.approx(-float(ba), abs=1e-9)
+        assert ab == pytest.approx(-ba, abs=1e-9)
 
     # --- as_of_date backward-snap ---
 
@@ -256,7 +254,7 @@ class TestRelativeReturn:
         result_explicit = relative_return(
             _STOCK_DF, _BENCH_DF, period=4, as_of_date="2024-01-08"
         )
-        assert result_default == result_explicit
+        assert result_default == pytest.approx(result_explicit)
 
     def test_as_of_date_backward_snap_to_friday(self) -> None:
         """as_of_date on a weekend snaps backward to the preceding Friday."""
@@ -268,7 +266,7 @@ class TestRelativeReturn:
         result_friday = relative_return(
             _STOCK_DF, _BENCH_DF, period=3, as_of_date="2024-01-05"
         )
-        assert result_sunday == result_friday
+        assert result_sunday == pytest.approx(result_friday)
 
     def test_as_of_date_before_all_data_returns_none(self) -> None:
         result = relative_return(
@@ -287,9 +285,17 @@ class TestRelativeReturn:
         trunc_bench = _make_df(_DATES[:3], _BENCH_CLOSES[:3])
         result_trunc = relative_return(trunc_stock, trunc_bench, period=2)
         assert result_early is not None and result_trunc is not None
-        assert float(result_early) == pytest.approx(float(result_trunc), abs=1e-9)
+        assert result_early == pytest.approx(result_trunc, abs=1e-9)
 
     # --- Contiguity / missing-bar ---
+
+    def test_benchmark_missing_stock_last_bar_returns_none(self) -> None:
+        """Stale benchmark missing stock's last bar returns None
+        (no silent backward shift).
+        """
+        stale_bench = _make_df(_DATES[:-1], _BENCH_CLOSES[:-1])
+        result = relative_return(_STOCK_DF, stale_bench, period=3)
+        assert result is None
 
     def test_gap_in_stock_returns_none(self) -> None:
         """Stock missing bar 2024-01-04 causes a contiguity mismatch → None."""
@@ -364,7 +370,7 @@ class TestRelativeReturn:
         b_df = pd.DataFrame({"close": _BENCH_CLOSES}, index=idx)
         result = relative_return(s_df, b_df, period=4)
         assert result is not None
-        assert abs(float(result) - 0.08) < 1e-9
+        assert abs(result - 0.08) < 1e-9
 
 
 # ---------------------------------------------------------------------------
@@ -376,6 +382,7 @@ class TestRelativePriceRatio:
     def test_hand_computed_ratio_values(self) -> None:
         """5 shared dates: ratios should be stock/bench for each date."""
         ratio = relative_price_ratio(_STOCK_DF, _BENCH_DF)
+        assert ratio is not None
         assert len(ratio) == 5
         for s_c, b_c, r in zip(_STOCK_CLOSES, _BENCH_CLOSES, ratio.values):
             assert r == pytest.approx(s_c / b_c, abs=1e-9)
@@ -387,51 +394,106 @@ class TestRelativePriceRatio:
 
     def test_index_is_datetimeindex(self) -> None:
         ratio = relative_price_ratio(_STOCK_DF, _BENCH_DF)
+        assert ratio is not None
         assert isinstance(ratio.index, pd.DatetimeIndex)
 
-    def test_no_overlap_returns_empty_series(self) -> None:
-        """Non-overlapping date ranges → empty Series."""
+    def test_no_overlap_returns_none(self) -> None:
+        """Non-overlapping date ranges → None (strict window)."""
         stock_past = _make_df(["2023-01-02", "2023-01-03"], [50.0, 51.0])
         bench_future = _make_df(["2024-01-02", "2024-01-03"], [200.0, 201.0])
-        ratio = relative_price_ratio(stock_past, bench_future)
-        assert len(ratio) == 0
+        assert relative_price_ratio(stock_past, bench_future) is None
 
-    def test_partial_overlap_only_shared_dates(self) -> None:
-        """Only the shared dates appear in the result."""
+    def test_partial_overlap_missing_bar_returns_none(self) -> None:
+        """Benchmark missing bars from stock window → None (no silent truncation)."""
         stock = _make_df(_DATES[:4], _STOCK_CLOSES[:4])
         bench = _make_df(_DATES[2:], _BENCH_CLOSES[2:])
-        # Shared: 2024-01-04, 2024-01-05
-        ratio = relative_price_ratio(stock, bench)
-        assert len(ratio) == 2
+        assert relative_price_ratio(stock, bench) is None
 
-    def test_zero_benchmark_close_produces_nan(self) -> None:
-        """Benchmark close = 0 → NaN ratio for that bar."""
+    def test_benchmark_missing_stock_last_bar_returns_none(self) -> None:
+        """Benchmark missing stock's last bar returns None."""
+        stale_bench = _make_df(_DATES[:-1], _BENCH_CLOSES[:-1])
+        assert relative_price_ratio(_STOCK_DF, stale_bench) is None
+
+    def test_zero_benchmark_close_returns_none(self) -> None:
+        """Benchmark close = 0 → None on invalid prices."""
         bench_zero = _make_df(_DATES, [200.0, 0.0, 202.0, 203.0, 204.0])
-        ratio = relative_price_ratio(_STOCK_DF, bench_zero)
-        assert len(ratio) == 5
-        assert ratio.iloc[0] == pytest.approx(100.0 / 200.0, abs=1e-9)
-        assert math.isnan(ratio.iloc[1])
+        assert relative_price_ratio(_STOCK_DF, bench_zero) is None
 
-    def test_empty_stock_df_returns_empty(self) -> None:
+    def test_negative_benchmark_close_returns_none(self) -> None:
+        bench_neg = _make_df(_DATES, [200.0, -5.0, 202.0, 203.0, 204.0])
+        assert relative_price_ratio(_STOCK_DF, bench_neg) is None
+
+    def test_nan_close_returns_none(self) -> None:
+        bench_nan = _make_df(_DATES, [200.0, float("nan"), 202.0, 203.0, 204.0])
+        assert relative_price_ratio(_STOCK_DF, bench_nan) is None
+
+    def test_empty_stock_df_returns_none(self) -> None:
         empty = pd.DataFrame({"date": [], "close": []})
-        ratio = relative_price_ratio(empty, _BENCH_DF)
-        assert len(ratio) == 0
+        assert relative_price_ratio(empty, _BENCH_DF) is None
+
+    def test_empty_bench_df_returns_none(self) -> None:
+        empty = pd.DataFrame({"date": [], "close": []})
+        assert relative_price_ratio(_STOCK_DF, empty) is None
 
     def test_missing_close_raises(self) -> None:
         no_close = pd.DataFrame({"date": _DATES, "open": [1.0] * 5})
         with pytest.raises(ValueError, match="'close' column"):
             relative_price_ratio(no_close, _BENCH_DF)
 
-    def test_antisymmetry_of_ratio(self) -> None:
-        """ratio(A, B) == 1 / ratio(B, A) for each date where both are finite."""
+    def test_inversion_of_ratio(self) -> None:
+        """ratio(A, B) * ratio(B, A) == 1 (inversion property)."""
         ab = relative_price_ratio(_STOCK_DF, _BENCH_DF)
         ba = relative_price_ratio(_BENCH_DF, _STOCK_DF)
+        assert ab is not None and ba is not None
         assert len(ab) == len(ba)
         for v_ab, v_ba in zip(ab.values, ba.values):
-            assert v_ab == pytest.approx(1.0 / v_ba, rel=1e-9)
+            assert (v_ab * v_ba) == pytest.approx(1.0, rel=1e-9)
 
     def test_identity_ratio_is_one(self) -> None:
         """Same DataFrame vs itself → ratio is 1.0 for every bar."""
         df = _make_df(_DATES, _STOCK_CLOSES)
         ratio = relative_price_ratio(df, df.copy())
+        assert ratio is not None
         assert all(v == pytest.approx(1.0, abs=1e-9) for v in ratio.values)
+
+    def test_lookback_bars_parameter(self) -> None:
+        """Specifying lookback_bars slices to exactly that many trailing bars."""
+        ratio_full = relative_price_ratio(_STOCK_DF, _BENCH_DF)
+        ratio_3 = relative_price_ratio(_STOCK_DF, _BENCH_DF, lookback_bars=3)
+        assert ratio_full is not None and ratio_3 is not None
+        assert len(ratio_3) == 3
+        pd.testing.assert_series_equal(ratio_3, ratio_full.iloc[-3:])
+
+    def test_lookback_bars_insufficient_returns_none(self) -> None:
+        """lookback_bars > available bars → None."""
+        assert relative_price_ratio(_STOCK_DF, _BENCH_DF, lookback_bars=10) is None
+
+    def test_lookback_bars_zero_raises(self) -> None:
+        with pytest.raises(ValueError, match="lookback_bars must be at least 1"):
+            relative_price_ratio(_STOCK_DF, _BENCH_DF, lookback_bars=0)
+
+    def test_as_of_date_snap(self) -> None:
+        """as_of_date backward-snap selects bars on or before as_of_date."""
+        ratio_early = relative_price_ratio(
+            _STOCK_DF, _BENCH_DF, lookback_bars=2, as_of_date="2024-01-04"
+        )
+        assert ratio_early is not None
+        assert len(ratio_early) == 2
+        assert ratio_early.index[-1] == pd.Timestamp("2024-01-04")
+
+    def test_as_of_date_before_first_bar_returns_none(self) -> None:
+        assert (
+            relative_price_ratio(_STOCK_DF, _BENCH_DF, as_of_date="2023-12-31") is None
+        )
+
+    def test_duplicate_dates_returns_none(self) -> None:
+        dup_dates = [_DATES[0], _DATES[0], _DATES[2], _DATES[3], _DATES[4]]
+        dup_df = _make_df(dup_dates, _STOCK_CLOSES)
+        assert relative_price_ratio(dup_df, _BENCH_DF) is None
+        assert relative_return(dup_df, _BENCH_DF, period=2) is None
+
+    def test_unsorted_dates_returns_none(self) -> None:
+        unsorted_dates = [_DATES[1], _DATES[0], _DATES[2], _DATES[3], _DATES[4]]
+        unsorted_df = _make_df(unsorted_dates, _STOCK_CLOSES)
+        assert relative_price_ratio(unsorted_df, _BENCH_DF) is None
+        assert relative_return(unsorted_df, _BENCH_DF, period=2) is None
