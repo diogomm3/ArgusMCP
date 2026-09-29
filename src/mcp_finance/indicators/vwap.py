@@ -23,6 +23,7 @@ from decimal import Decimal
 import numpy as np
 import pandas as pd
 
+from mcp_finance.indicators._date_utils import extract_norm_dates
 from mcp_finance.indicators.structure import distance_to_level
 
 
@@ -81,17 +82,7 @@ def anchored_vwap(
         raise ValueError(f"Invalid anchor_date format: {anchor_date}") from e
 
     # Extract dates from column or DatetimeIndex
-    if "date" in df.columns:
-        try:
-            norm_dates = pd.to_datetime(df["date"]).dt.normalize()
-        except Exception as e:
-            raise ValueError("Failed to parse date column") from e
-    elif isinstance(df.index, pd.DatetimeIndex):
-        norm_dates = pd.Series(df.index.normalize(), index=df.index)
-    else:
-        raise ValueError(
-            "DataFrame must contain a 'date' column or have a DatetimeIndex"
-        )
+    norm_dates = extract_norm_dates(df)
 
     # Check for duplicate dates
     if norm_dates.duplicated().any():
