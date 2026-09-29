@@ -32,6 +32,36 @@ DEFAULT_WATCHLIST: list[str] = [
     "AZN.L",
 ]
 
+# ---------------------------------------------------------------------------
+# M4 — Benchmark & sector ETF symbols
+# These are kept SEPARATE from DEFAULT_WATCHLIST intentionally:
+#   - Watchlist users should not receive ETF data by default.
+#   - Relative-strength and regime calculations require these to be ingested
+#     with sufficient history (≥252 bars) independently of stock ingestion.
+# ---------------------------------------------------------------------------
+
+BENCHMARK_SYMBOLS: list[str] = [
+    "SPY",  # S&P 500 — primary broad-market benchmark
+    "QQQ",  # Nasdaq-100 — tech/growth benchmark
+]
+
+# SPDR Sector ETF map: sector label → ETF ticker
+# Coverage: all 11 GICS sectors available via SPDR suite.
+# Used for sector-regime classification in M4.3.
+SECTOR_ETF_MAP: dict[str, str] = {
+    "Technology": "XLK",
+    "Healthcare": "XLV",
+    "Financials": "XLF",
+    "Consumer Discretionary": "XLY",
+    "Consumer Staples": "XLP",
+    "Energy": "XLE",
+    "Industrials": "XLI",
+    "Materials": "XLB",
+    "Real Estate": "XLRE",
+    "Utilities": "XLU",
+    "Communication Services": "XLC",
+}
+
 
 async def run_batch_ingest(
     symbols: list[str] | None = None,
