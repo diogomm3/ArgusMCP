@@ -31,7 +31,6 @@ from mcp_finance.indicators.functions import (
     rolling_percentile,
     rsi,
 )
-from mcp_finance.indicators.market_regime import market_regime
 from mcp_finance.indicators.models import (
     Candidate,
     Level,
@@ -41,6 +40,7 @@ from mcp_finance.indicators.models import (
     VolumeBin,
     VolumeProfile,
 )
+from mcp_finance.indicators.regime import market_regime
 from mcp_finance.indicators.snapshot import (
     SymbolNotCachedError,
     build_candidate_snapshot,
