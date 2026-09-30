@@ -31,10 +31,13 @@ from mcp_finance.indicators.functions import (
     rolling_percentile,
     rsi,
 )
+from mcp_finance.indicators.market_regime import market_regime
 from mcp_finance.indicators.models import (
     Candidate,
     Level,
     LevelType,
+    MarketRegime,
+    RegimeLabel,
     VolumeBin,
     VolumeProfile,
 )
@@ -83,6 +86,8 @@ __all__ = [
     "build_candidate_snapshot",
     "Level",
     "LevelType",
+    "MarketRegime",
+    "RegimeLabel",
     # M1.1 market structure
     "swing_highs_lows",
     "market_structure",
@@ -98,4 +103,6 @@ __all__ = [
     # M3 Anchored VWAP
     "anchored_vwap",
     "price_vs_vwap_distance",
+    # M4 Market Regime
+    "market_regime",
 ]

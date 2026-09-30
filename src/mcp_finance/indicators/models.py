@@ -356,3 +356,60 @@ class VolumeProfile(BaseModel):
         ...,
         description="Number of price bins used for discretization",
     )
+
+
+RegimeLabel = Literal["BULLISH", "BEARISH", "NEUTRAL"]
+
+
+class MarketRegime(BaseModel):
+    """Market regime classification and underlying trend metrics.
+
+    Lagging trend-state label derived from 50-day and 200-day EMAs plus 20-session
+    EMA-50 slope over a fixed 500-bar trailing window.
+    """
+
+    regime: RegimeLabel = Field(
+        ...,
+        description="Regime state: 'BULLISH', 'BEARISH', or 'NEUTRAL'",
+    )
+    sessions_in_regime: int = Field(
+        ...,
+        ge=1,
+        le=60,
+        description="Consecutive sessions current label has held, capped at 60",
+    )
+    close_vs_ema50_pct: Decimal = Field(
+        ...,
+        description=(
+            "Distance from close to EMA-50 in percent: (close - ema50) / ema50 * 100"
+        ),
+    )
+    close_vs_ema200_pct: Decimal = Field(
+        ...,
+        description=(
+            "Distance from close to EMA-200 in percent: (close - ema200) / ema200 * 100"
+        ),
+    )
+    ema50_slope20: Decimal = Field(
+        ...,
+        description=(
+            "20-session percentage slope of EMA-50: "
+            "(ema50[t] - ema50[t-20]) / ema50[t-20]"
+        ),
+    )
+    ema50: Decimal = Field(
+        ...,
+        description="50-day Exponential Moving Average",
+    )
+    ema200: Decimal = Field(
+        ...,
+        description="200-day Exponential Moving Average",
+    )
+    close: Decimal = Field(
+        ...,
+        description="Closing price on as_of_date",
+    )
+    as_of_date: datetime.date = Field(
+        ...,
+        description="Date of the evaluated bar",
+    )
