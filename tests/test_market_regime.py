@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import datetime
 import pathlib
-import sys
 from decimal import Decimal
 
 import pandas as pd
 import pytest
 
+import mcp_finance.indicators.regime as regime_mod
 from mcp_finance.indicators.models import MarketRegime
 from mcp_finance.indicators.regime import (
     DEADBAND,
@@ -152,7 +152,7 @@ def test_slope_exact_deadband_boundary_neutral(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Slope at exactly +0.0025 or -0.0025 is NEUTRAL (requires strict > or <)."""
-    mr_mod = sys.modules["mcp_finance.indicators.regime"]
+    mr_mod = regime_mod
     df = _generate_synthetic_df(n_bars=500, close_val=100.0)
 
     # 1. EMA50 > EMA200, slope == +0.0025 exactly (DEADBAND) -> NEUTRAL

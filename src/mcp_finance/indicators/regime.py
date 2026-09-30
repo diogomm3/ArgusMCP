@@ -13,6 +13,11 @@ Analytical Scope & Intent:
       at -13.24% from peak; 2025 turns BEARISH on 2025-04-11 at -12.89% from peak,
       three days after the April 2025 low).
 
+    Source of lag figures: These dates were computed on a full-history (non-windowed)
+    EMA run over all available SPY bars. The 500-bar window fixture cannot reproduce
+    the 2022 BEARISH onset until approximately March 2022 (when the fixture first
+    accumulates 500 bars); the full-history run uses unbounded EMA seeds.
+
     Breadth Approximation Note:
     Explicitly **not** true market breadth (e.g. advance-decline lines, NYSE % above
     50-day MA). It is an approximation derived from major benchmark / sector ETF
@@ -32,11 +37,23 @@ Classification Rule — Variant (b):
     - NEUTRAL: All other configurations (including deadband slope, exact equality,
       or opposing alignment/slope).
 
+    Deadband calibration: The 0.0025 (0.25%/bar) threshold is a heuristic tuned
+    on SPY, QQQ, and XLE from 2022 onward via a sweep of sep in
+    {0, 0.25%, 0.5%, 1%}. No sep value reduced XLE transitions to ~30 without
+    delaying SPY's 2022 and 2025 BEARISH onset by more than two weeks, so sep=0
+    was kept. The slope deadband alone provides the necessary noise filter.
+
 Sessions in Regime:
     Counts the number of consecutive trading sessions the current label has held
     within the evaluated 500-bar window, capped at 60. This provides downstream
     consumers a stateless heuristic to discount fresh flips without maintaining
     cross-invocation state.
+
+Date Helper:
+    `last_settled_session_date` (in market_data/utils.py) is used by callers to
+    determine the as_of_date for batch ingestion. It uses a 16:30 ET cutoff with
+    weekend/Monday roll-back but **does not account for US market holidays**;
+    a holiday that falls mid-week is treated as a normal trading day.
 
 No network calls, no database access, no side effects.
 """
