@@ -1,5 +1,7 @@
 """Utilities for market data formatting, exchange derivation, and symbol parsing."""
 
+import datetime
+import zoneinfo
 from typing import TYPE_CHECKING
 
 import pandas as pd
@@ -11,6 +13,42 @@ if TYPE_CHECKING:
     from mcp_finance.market_data.yfinance import YFinanceClient
 
 logger = get_logger(__name__)
+
+_EASTERN_TZ = zoneinfo.ZoneInfo("America/New_York")
+_SETTLEMENT_CUTOFF_TIME = datetime.time(16, 30)
+
+
+def last_settled_session_date(now: datetime.datetime | None = None) -> datetime.date:
+    """Return the date of the most recent fully settled market session.
+
+    Uses America/New_York timezone with an injectable `now`.
+    - Weekend dates (Saturday/Sunday) roll back to the preceding Friday.
+    - Weekdays before 16:30 America/New_York (market close + settlement buffer)
+      roll back to the preceding weekday (Friday if Monday).
+    - Weekdays at or after 16:30 America/New_York return today's date.
+    - The 16:30 ET cutoff is also conservative for European listings.
+    """
+    if now is None:
+        et_now = datetime.datetime.now(_EASTERN_TZ)
+    elif now.tzinfo is None:
+        et_now = now.replace(tzinfo=_EASTERN_TZ)
+    else:
+        et_now = now.astimezone(_EASTERN_TZ)
+
+    dt = et_now.date()
+    # Weekend rolls back to previous Friday
+    if dt.weekday() == 5:  # Saturday
+        return dt - datetime.timedelta(days=1)
+    if dt.weekday() == 6:  # Sunday
+        return dt - datetime.timedelta(days=2)
+
+    # Weekday (0=Monday ... 4=Friday)
+    if et_now.time() < _SETTLEMENT_CUTOFF_TIME:
+        if dt.weekday() == 0:  # Monday rolls back to Friday
+            return dt - datetime.timedelta(days=3)
+        return dt - datetime.timedelta(days=1)
+    return dt
+
 
 _SUFFIX_EXCHANGE_MAP: dict[str, str] = {
     ".L": "LSE",

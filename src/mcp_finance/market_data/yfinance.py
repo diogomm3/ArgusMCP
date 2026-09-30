@@ -103,20 +103,46 @@ class YFinanceClient:
         start: datetime.date | str,
         end: datetime.date | str,
         interval: str = "1d",
+        _now: datetime.datetime | None = None,
     ) -> pd.DataFrame:
-        """Asynchronously fetch OHLCV bars in a worker thread."""
-        start_str = (
-            start.isoformat() if isinstance(start, datetime.date) else str(start)
-        )
-        end_str = end.isoformat() if isinstance(end, datetime.date) else str(end)
+        """Fetch OHLCV bars in [start, end] inclusive.
 
-        return await asyncio.to_thread(
+        The adapter treats ``end`` as an *inclusive* boundary.  It passes
+        ``end + 1 day`` to yfinance (which uses an exclusive upper bound),
+        capped at ``last_settled_session_date(_now) + 1 day``.  Any bar whose
+        date exceeds ``last_settled_session_date`` is dropped as a second
+        defence against partial in-progress bars being written to the cache.
+
+        ``_now`` is injectable for testing (default: current system time).
+        """
+        from mcp_finance.market_data.utils import last_settled_session_date
+
+        start_date = (
+            datetime.date.fromisoformat(start) if isinstance(start, str) else start
+        )
+        end_date = datetime.date.fromisoformat(end) if isinstance(end, str) else end
+
+        last_settled = last_settled_session_date(_now)
+        # Cap inclusive end at last settled, then +1 for exclusive yfinance arg
+        effective_end_exclusive = min(end_date, last_settled) + datetime.timedelta(
+            days=1
+        )
+        start_str = start_date.isoformat()
+        end_str = effective_end_exclusive.isoformat()
+
+        df = await asyncio.to_thread(
             self._fetch_history_sync,
             symbol,
             start_str,
             end_str,
             interval,
         )
+
+        # Second defence: drop any row dated after last_settled (partial bar guard)
+        if not df.empty and "date" in df.columns:
+            df = df[df["date"] <= last_settled].reset_index(drop=True)
+
+        return df
 
     async def get_current_price(self, symbol: str) -> PriceQuote:
         """Asynchronously fetch informational quote in a worker thread."""

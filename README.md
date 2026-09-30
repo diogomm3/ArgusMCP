@@ -260,7 +260,8 @@ Run the batch ingestion job to pre-populate historical OHLCV bars without making
 
 ```bash
 # Default ingestion (INGESTION_WATCHLIST — 23 tickers: 10 stocks + 2 benchmarks + 11 sector ETFs)
-# Default --days 400 yields ~270 trading bars (ensuring ≥252 bars for EMA-200 warmup).
+# Default --days 900 yields ~620 trading bars (enough for the 500-bar regime window +
+# 2021 warmup for EMA-200 seed convergence).
 python -m mcp_finance.market_data.batch
 
 # Or ingest deeper multi-year history for specific symbols (e.g. 1500 calendar days ≈ 1029 trading bars)
@@ -269,9 +270,17 @@ python -m mcp_finance.market_data.batch --symbols XLK,XLV,XLF,XLY,XLP,XLE,XLI,XL
 ```
 
 > [!NOTE]
+> **`end_date` semantics**: the batch adapter treats `end_date` as *inclusive*.  It passes
+> `end + 1 day` to yfinance (which uses an exclusive upper bound) capped at
+> `last_settled_session_date()` + 1 day, and drops any bar dated after `last_settled`
+> as a second defence against partial in-progress bars.  `last_settled_session_date()`
+> uses the America/New_York 16:30 ET cutoff — a batch run *after* market close
+> correctly includes that day's completed bar.
+
+> [!NOTE]
 > `INGESTION_WATCHLIST` is the deduplicated union of `DEFAULT_WATCHLIST` (10 stocks), `BENCHMARK_SYMBOLS` (SPY, QQQ),
 > and `SECTOR_ETF_MAP` unique values (11 SPDR sector ETFs). A bare `python -m mcp_finance.market_data.batch`
-> run ingests all 23 tickers with 400 calendar days (~270 trading bars). Passing `--symbols` overrides the target list.
+> run ingests all 23 tickers with 900 calendar days (~620 trading bars). Passing `--symbols` overrides the target list.
 
 Apply migrations:
 

@@ -14,6 +14,7 @@ from mcp_finance.db.engine import get_session
 from mcp_finance.logger import configure_logging, get_logger
 from mcp_finance.market_data.models import BatchIngestResult
 from mcp_finance.market_data.service import MarketDataService
+from mcp_finance.market_data.utils import last_settled_session_date
 
 logger = get_logger(__name__)
 
@@ -102,17 +103,24 @@ for _sym in (
 
 async def run_batch_ingest(
     symbols: list[str] | None = None,
-    days: int = 400,
+    days: int = 900,
     delay_seconds: float = 0.5,
     session: AsyncSession | None = None,
+    _now: datetime.datetime | None = None,
 ) -> BatchIngestResult:
     """Ingest historical bars for a list of symbols into Postgres.
 
-    A deliberate delay is added between symbols to respect unauthenticated yfinance rate
-    limits and avoid triggering throttling or silent empty responses.
+    ``end_date`` is the last settled session date (America/New_York, 16:30 ET
+    cutoff), so a batch run after market close correctly includes that day's
+    completed bar.  The injectable ``_now`` parameter is for unit-test clock
+    control only; leave it ``None`` in production.
+
+    A deliberate delay is added between symbols to respect unauthenticated
+    yfinance rate limits and avoid triggering throttling or silent empty
+    responses.
     """
     target_symbols = symbols if symbols is not None else INGESTION_WATCHLIST
-    end_date = datetime.date.today()
+    end_date = last_settled_session_date(_now)
     start_date = end_date - datetime.timedelta(days=days)
 
     total = len(target_symbols)
@@ -196,10 +204,11 @@ def main() -> None:
     parser.add_argument(
         "--days",
         type=int,
-        default=400,
+        default=900,
         help=(
-            "Number of past calendar days of history to ingest (default: 400, "
-            "yielding ~270 trading bars, ensuring ≥252 bars for EMA-200)."
+            "Number of past calendar days of history to ingest (default: 900, "
+            "yielding ~620 trading bars — enough for the 500-bar regime window "
+            "plus 2021 warmup for EMA-200 seed convergence)."
         ),
     )
     parser.add_argument(
