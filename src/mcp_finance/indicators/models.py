@@ -390,6 +390,13 @@ class MarketRegime(BaseModel):
             "Distance from close to EMA-200 in percent: (close - ema200) / ema200 * 100"
         ),
     )
+    ema50_vs_ema200_pct: Decimal = Field(
+        ...,
+        description=(
+            "Distance from EMA-50 to EMA-200 in percent: "
+            "(ema50 - ema200) / ema200 * 100"
+        ),
+    )
     ema50_slope20: Decimal = Field(
         ...,
         description=(

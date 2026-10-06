@@ -27,6 +27,8 @@ def last_settled_session_date(now: datetime.datetime | None = None) -> datetime.
       roll back to the preceding weekday (Friday if Monday).
     - Weekdays at or after 16:30 America/New_York return today's date.
     - The 16:30 ET cutoff is also conservative for European listings.
+    - Note on holidays: Does not account for US market holidays (e.g. Thanksgiving,
+      Good Friday); a holiday that falls mid-week is treated as a normal trading day.
     """
     if now is None:
         et_now = datetime.datetime.now(_EASTERN_TZ)

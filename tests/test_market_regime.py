@@ -64,29 +64,32 @@ def test_spy_fixture_latest_session_bullish(spy_fixture_df: pd.DataFrame) -> Non
     assert result.sessions_in_regime == 60  # > 100 sessions, capped at 60
     assert result.ema50 > result.ema200
     assert result.ema50_slope20 > Decimal("0.0025")
+    assert result.ema50_vs_ema200_pct > Decimal("0.5")
     assert result.close_vs_ema50_pct > Decimal("-10.0")
 
 
 @pytest.mark.unit
 def test_spy_fixture_2022_bearish(spy_fixture_df: pd.DataFrame) -> None:
     """2022-05-15 and 2022-06-15 in SPY fixture are confirmed BEARISH."""
-    # 2022-05-15 is Sunday, snaps to Friday 2022-05-13
+    # 2022-05-15 is Sunday, snaps to Friday 2022-05-13 (onset 2022-05-06 -> 6 sessions)
     res_may = market_regime(spy_fixture_df, as_of_date="2022-05-15")
     assert res_may is not None
     assert res_may.regime == "BEARISH"
     assert res_may.as_of_date == datetime.date(2022, 5, 13)
-    assert res_may.sessions_in_regime == 10
+    assert res_may.sessions_in_regime == 6
     assert res_may.ema50 < res_may.ema200
     assert res_may.ema50_slope20 < Decimal("-0.0025")
+    assert res_may.ema50_vs_ema200_pct < Decimal("-0.5")
 
-    # 2022-06-15 mid-bear market
+    # 2022-06-15 mid-bear market (28 sessions since 2022-05-06 onset)
     res_june = market_regime(spy_fixture_df, as_of_date="2022-06-15")
     assert res_june is not None
     assert res_june.regime == "BEARISH"
     assert res_june.as_of_date == datetime.date(2022, 6, 15)
-    assert res_june.sessions_in_regime == 32
+    assert res_june.sessions_in_regime == 28
     assert res_june.ema50 < res_june.ema200
     assert res_june.ema50_slope20 < Decimal("-0.0025")
+    assert res_june.ema50_vs_ema200_pct < Decimal("-0.5")
 
 
 @pytest.mark.unit
@@ -96,6 +99,7 @@ def test_spy_fixture_2022_neutral(spy_fixture_df: pd.DataFrame) -> None:
     assert res is not None
     assert res.regime == "NEUTRAL"
     assert res.as_of_date == datetime.date(2022, 3, 15)
+    # Consecutive NEUTRAL sessions within window since 2022-01-25
     assert res.sessions_in_regime == 35
     # EMA50 > EMA200 but slope is negative (-0.031), not matching BULLISH
     assert res.ema50 > res.ema200
@@ -302,3 +306,150 @@ def test_market_regime_metrics_math() -> None:
     assert res.ema200 == Decimal("150.0000")
     assert res.close_vs_ema50_pct == Decimal("0.0000")
     assert res.close_vs_ema200_pct == Decimal("0.0000")
+    assert res.ema50_vs_ema200_pct == Decimal("0.0000")
+
+
+# ---------------------------------------------------------------------------
+# 5. Separation Band Boundary & Transition Sequence Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_separation_exact_boundary_neutral_and_triggers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """abs(EMA50 - EMA200)/EMA200 must strictly exceed REGIME_MIN_SEPARATION (0.005)."""
+    mr_mod = regime_mod
+    df = _generate_synthetic_df(n_bars=500, close_val=100.0)
+
+    # Base: slope is well outside deadband (+0.01 / -0.01)
+    def mock_slope_positive(series: pd.Series, lookback_bars: int = 20) -> pd.Series:
+        return pd.Series([0.01] * len(series), index=series.index)
+
+    def mock_slope_negative(series: pd.Series, lookback_bars: int = 20) -> pd.Series:
+        return pd.Series([-0.01] * len(series), index=series.index)
+
+    # 1. EMA50 > EMA200, sep == 0.005 exactly (100.5 vs 100.0) -> NEUTRAL
+    def mock_ema_exact_sep_pos(
+        df_in: pd.DataFrame, period: int, column: str = "close"
+    ) -> pd.Series:
+        val = 100.5 if period == 50 else 100.0
+        return pd.Series([val] * len(df_in), index=df_in.index)
+
+    monkeypatch.setattr(mr_mod, "ema", mock_ema_exact_sep_pos)
+    monkeypatch.setattr(mr_mod, "ema_slope", mock_slope_positive)
+    res = market_regime(df)
+    assert res is not None
+    assert res.regime == "NEUTRAL"
+    assert res.ema50_vs_ema200_pct == Decimal("0.5000")
+
+    # 2. EMA50 > EMA200, sep == 0.005 - 1e-6 (100.4999 vs 100.0) -> NEUTRAL
+    def mock_ema_below_sep_pos(
+        df_in: pd.DataFrame, period: int, column: str = "close"
+    ) -> pd.Series:
+        val = 100.4999 if period == 50 else 100.0
+        return pd.Series([val] * len(df_in), index=df_in.index)
+
+    monkeypatch.setattr(mr_mod, "ema", mock_ema_below_sep_pos)
+    res = market_regime(df)
+    assert res is not None
+    assert res.regime == "NEUTRAL"
+
+    # 3. EMA50 > EMA200, sep == 0.005 + 1e-6 (100.5001 vs 100.0) -> BULLISH
+    def mock_ema_above_sep_pos(
+        df_in: pd.DataFrame, period: int, column: str = "close"
+    ) -> pd.Series:
+        val = 100.5001 if period == 50 else 100.0
+        return pd.Series([val] * len(df_in), index=df_in.index)
+
+    monkeypatch.setattr(mr_mod, "ema", mock_ema_above_sep_pos)
+    res = market_regime(df)
+    assert res is not None
+    assert res.regime == "BULLISH"
+
+    # 4. EMA50 < EMA200, sep == 0.005 exactly (99.5 vs 100.0) -> NEUTRAL
+    def mock_ema_exact_sep_neg(
+        df_in: pd.DataFrame, period: int, column: str = "close"
+    ) -> pd.Series:
+        val = 99.5 if period == 50 else 100.0
+        return pd.Series([val] * len(df_in), index=df_in.index)
+
+    monkeypatch.setattr(mr_mod, "ema", mock_ema_exact_sep_neg)
+    monkeypatch.setattr(mr_mod, "ema_slope", mock_slope_negative)
+    res = market_regime(df)
+    assert res is not None
+    assert res.regime == "NEUTRAL"
+    assert res.ema50_vs_ema200_pct == Decimal("-0.5000")
+
+    # 5. EMA50 < EMA200, sep == 0.005 - 1e-6 (99.5001 vs 100.0) -> NEUTRAL
+    def mock_ema_below_sep_neg(
+        df_in: pd.DataFrame, period: int, column: str = "close"
+    ) -> pd.Series:
+        val = 99.5001 if period == 50 else 100.0
+        return pd.Series([val] * len(df_in), index=df_in.index)
+
+    monkeypatch.setattr(mr_mod, "ema", mock_ema_below_sep_neg)
+    res = market_regime(df)
+    assert res is not None
+    assert res.regime == "NEUTRAL"
+
+    # 6. EMA50 < EMA200, sep == 0.005 + 1e-6 (99.4999 vs 100.0) -> BEARISH
+    def mock_ema_above_sep_neg(
+        df_in: pd.DataFrame, period: int, column: str = "close"
+    ) -> pd.Series:
+        val = 99.4999 if period == 50 else 100.0
+        return pd.Series([val] * len(df_in), index=df_in.index)
+
+    monkeypatch.setattr(mr_mod, "ema", mock_ema_above_sep_neg)
+    res = market_regime(df)
+    assert res is not None
+    assert res.regime == "BEARISH"
+
+
+@pytest.mark.unit
+def test_spy_fixture_transitions_pinned(spy_fixture_df: pd.DataFrame) -> None:
+    """Pin the full SPY transition sequence over all evaluable dates in the fixture."""
+    expected_transitions = [
+        (datetime.date(2022, 4, 6), "BULLISH"),
+        (datetime.date(2022, 4, 25), "NEUTRAL"),
+        (datetime.date(2022, 5, 6), "BEARISH"),
+        (datetime.date(2022, 8, 3), "NEUTRAL"),
+        (datetime.date(2022, 9, 15), "BEARISH"),
+        (datetime.date(2022, 11, 14), "NEUTRAL"),
+        (datetime.date(2023, 1, 3), "BEARISH"),
+        (datetime.date(2023, 1, 20), "NEUTRAL"),
+        (datetime.date(2023, 3, 20), "BEARISH"),
+        (datetime.date(2023, 3, 31), "NEUTRAL"),
+        (datetime.date(2023, 4, 19), "BULLISH"),
+        (datetime.date(2023, 9, 25), "NEUTRAL"),
+        (datetime.date(2023, 11, 21), "BULLISH"),
+        (datetime.date(2024, 5, 1), "NEUTRAL"),
+        (datetime.date(2024, 5, 14), "BULLISH"),
+        (datetime.date(2024, 8, 12), "NEUTRAL"),
+        (datetime.date(2024, 8, 23), "BULLISH"),
+        (datetime.date(2025, 1, 14), "NEUTRAL"),
+        (datetime.date(2025, 1, 23), "BULLISH"),
+        (datetime.date(2025, 3, 5), "NEUTRAL"),
+        (datetime.date(2025, 4, 16), "BEARISH"),
+        (datetime.date(2025, 5, 14), "NEUTRAL"),
+        (datetime.date(2025, 5, 27), "BULLISH"),
+        (datetime.date(2026, 3, 2), "NEUTRAL"),
+        (datetime.date(2026, 4, 22), "BULLISH"),
+    ]
+
+    dates = pd.to_datetime(spy_fixture_df["date"]).dt.date.tolist()
+    date_to_idx = {d: i for i, d in enumerate(dates)}
+
+    for trans_date, expected_new_regime in expected_transitions:
+        idx = date_to_idx[trans_date]
+        prev_date = dates[idx - 1]
+
+        res_cur = market_regime(spy_fixture_df, as_of_date=trans_date)
+        res_prev = market_regime(spy_fixture_df, as_of_date=prev_date)
+
+        assert res_cur is not None
+        assert res_prev is not None
+        assert res_cur.regime == expected_new_regime
+        assert res_prev.regime != expected_new_regime
+        expected_sess = 2 if trans_date == datetime.date(2023, 3, 20) else 1
+        assert res_cur.sessions_in_regime == expected_sess

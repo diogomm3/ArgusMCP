@@ -1,17 +1,16 @@
 """Market regime indicator pure function (Phase M4).
 
-Provides `market_regime(df, as_of_date)` implementing Variant (b) on a fixed
-500-bar trailing window.
+Provides `market_regime(df, as_of_date)` implementing Variant (b) with a
+minimum separation band on a fixed 500-bar trailing window.
 
 Analytical Scope & Intent:
     This is a **lagging trend-state label**, not an intraday or entry/exit timing
-    signal. Empirical drawdown calibration shows:
+    signal. Empirical drawdown calibration with sep=0.005 shows:
     - Leaves BULLISH after a 4–9% market pullback (e.g. 2022 drawdown leaves
       BULLISH on 2022-01-25 at -9.05% from peak; 2025 pullback leaves BULLISH
       on 2025-01-14 at -4.22% from peak).
-    - Turns BEARISH near ~13% drawdown (e.g. 2022 turns BEARISH on 2022-05-02
-      at -13.24% from peak; 2025 turns BEARISH on 2025-04-11 at -12.89% from peak,
-      three days after the April 2025 low).
+    - Turns BEARISH near ~14% drawdown (e.g. 2022 turns BEARISH on 2022-05-06
+      at -13.89% from peak; 2025 turns BEARISH on 2025-04-16 at -14.24% from peak).
 
     Source of lag figures: These dates were computed on a full-history (non-windowed)
     EMA run over all available SPY bars. The 500-bar window fixture cannot reproduce
@@ -31,29 +30,25 @@ Fixed Window Policy:
     and eliminates EMA-200 seed-bias drift (<0.01% weight from the initial seed
     at bar 500).
 
-Classification Rule — Variant (b):
+Classification Rule — Variant (b) with Minimum Separation:
     - BULLISH: EMA50 > EMA200 AND slope20(EMA50) > 0.0025
+      AND abs(EMA50 - EMA200) / EMA200 > 0.005
     - BEARISH: EMA50 < EMA200 AND slope20(EMA50) < -0.0025
-    - NEUTRAL: All other configurations (including deadband slope, exact equality,
-      or opposing alignment/slope).
+      AND abs(EMA50 - EMA200) / EMA200 > 0.005
+    - NEUTRAL: All other configurations (including deadband slope, separation <= 0.005,
+      exact equality, or opposing alignment/slope).
 
-    Deadband calibration: The 0.0025 (0.25%/bar) threshold is a heuristic tuned
-    on SPY, QQQ, and XLE from 2022 onward via a sweep of sep in
-    {0, 0.25%, 0.5%, 1%}. No sep value reduced XLE transitions to ~30 without
-    delaying SPY's 2022 and 2025 BEARISH onset by more than two weeks, so sep=0
-    was kept. The slope deadband alone provides the necessary noise filter.
+    Separation band calibration: The 0.005 (0.5%) minimum separation threshold was
+    chosen based on bringing XLE to 30 transitions while keeping added lag on SPY's
+    BEARISH onset under two weeks (+4 days in 2022, +5 days in 2025), and confirmed
+    by an out-of-sample check across 10 sector ETFs (reducing total transitions from 332
+    to 314 with no single ETF worsening by more than 2).
 
 Sessions in Regime:
     Counts the number of consecutive trading sessions the current label has held
     within the evaluated 500-bar window, capped at 60. This provides downstream
     consumers a stateless heuristic to discount fresh flips without maintaining
     cross-invocation state.
-
-Date Helper:
-    `last_settled_session_date` (in market_data/utils.py) is used by callers to
-    determine the as_of_date for batch ingestion. It uses a 16:30 ET cutoff with
-    weekend/Monday roll-back but **does not account for US market holidays**;
-    a holiday that falls mid-week is treated as a normal trading day.
 
 No network calls, no database access, no side effects.
 """
@@ -71,6 +66,7 @@ from mcp_finance.indicators.functions import ema, ema_slope
 from mcp_finance.indicators.models import MarketRegime, RegimeLabel
 
 DEADBAND: float = 0.0025
+REGIME_MIN_SEPARATION: float = 0.005
 REQUIRED_WINDOW_BARS: int = 500
 MAX_SESSIONS_CAP: int = 60
 
@@ -136,7 +132,6 @@ def market_regime(
         return None
 
     # Calculate EMAs and slope
-    # Use standard indicator functions: ema(df, period) and ema_slope(series, lookback)
     e50_series = ema(window_df, 50, column="close")
     e200_series = ema(window_df, 200, column="close")
     slope20_series = ema_slope(e50_series, lookback_bars=20)
@@ -150,18 +145,29 @@ def market_regime(
     if np.isnan(cur_e50) or np.isnan(cur_e200) or np.isnan(cur_slope):
         return None
 
+    # Minimum separation check (strict inequality required for BULLISH/BEARISH)
+    cur_sep_pct = abs(cur_e50 - cur_e200) / cur_e200
+    meets_sep = cur_sep_pct > REGIME_MIN_SEPARATION
+
     # Variant (b) classification with strict inequalities
     regime: RegimeLabel
-    if cur_e50 > cur_e200 and cur_slope > DEADBAND:
+    if cur_e50 > cur_e200 and cur_slope > DEADBAND and meets_sep:
         regime = "BULLISH"
-    elif cur_e50 < cur_e200 and cur_slope < -DEADBAND:
+    elif cur_e50 < cur_e200 and cur_slope < -DEADBAND and meets_sep:
         regime = "BEARISH"
     else:
         regime = "NEUTRAL"
 
     # Compute sessions_in_regime (stateless, backwards scan across window, capped at 60)
-    is_bull = (e50_series > e200_series) & (slope20_series > DEADBAND)
-    is_bear = (e50_series < e200_series) & (slope20_series < -DEADBAND)
+    sep_series = (e50_series - e200_series).abs() / e200_series
+    meets_sep_series = sep_series > REGIME_MIN_SEPARATION
+
+    is_bull = (
+        (e50_series > e200_series) & (slope20_series > DEADBAND) & meets_sep_series
+    )
+    is_bear = (
+        (e50_series < e200_series) & (slope20_series < -DEADBAND) & meets_sep_series
+    )
 
     labels = pd.Series("NEUTRAL", index=window_df.index)
     labels[is_bull] = "BULLISH"
@@ -180,12 +186,14 @@ def market_regime(
     # Relative percentage distances
     close_vs_ema50_pct = (cur_close - cur_e50) / cur_e50 * 100.0
     close_vs_ema200_pct = (cur_close - cur_e200) / cur_e200 * 100.0
+    ema50_vs_ema200_pct = (cur_e50 - cur_e200) / cur_e200 * 100.0
 
     return MarketRegime(
         regime=regime,
         sessions_in_regime=sessions_in_regime,
         close_vs_ema50_pct=Decimal(str(round(close_vs_ema50_pct, 4))),
         close_vs_ema200_pct=Decimal(str(round(close_vs_ema200_pct, 4))),
+        ema50_vs_ema200_pct=Decimal(str(round(ema50_vs_ema200_pct, 4))),
         ema50_slope20=Decimal(str(round(cur_slope, 6))),
         ema50=Decimal(str(round(cur_e50, 4))),
         ema200=Decimal(str(round(cur_e200, 4))),
