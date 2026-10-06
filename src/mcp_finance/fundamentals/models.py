@@ -2,8 +2,9 @@
 
 import datetime
 from decimal import Decimal
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CompanyProfile(BaseModel):
@@ -39,6 +40,19 @@ class CompanyProfile(BaseModel):
         alias="marketCap",
         description="Market capitalization",
     )
+
+    @field_validator("market_cap", mode="before")
+    @classmethod
+    def _coerce_market_cap(cls, v: Any) -> int | None:
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return int(round(v))
+        try:
+            return int(round(float(v)))
+        except (ValueError, TypeError):
+            return None
+
     beta: Decimal | None = Field(
         default=None,
         description="Beta vs benchmark",
@@ -194,6 +208,19 @@ class CompanyFundamentals(BaseModel):
         default=None,
         description="Market capitalization",
     )
+
+    @field_validator("market_cap", mode="before")
+    @classmethod
+    def _coerce_market_cap(cls, v: Any) -> int | None:
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return int(round(v))
+        try:
+            return int(round(float(v)))
+        except (ValueError, TypeError):
+            return None
+
     price: Decimal | None = Field(
         default=None,
         description="Latest price",

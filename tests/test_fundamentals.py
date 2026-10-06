@@ -635,3 +635,32 @@ def test_fundamentals_tool_registered() -> None:
     """Verify get_stock_fundamentals is registered on MCPServer."""
     tool_names = [tool.name for tool in mcp._tool_manager.list_tools()]
     assert "get_stock_fundamentals" in tool_names
+
+
+@pytest.mark.unit
+async def test_fmp_client_fractional_market_cap_coercion() -> None:
+    """Verify fractional marketCap from FMP /profile (e.g. GOOGL) coerces to int."""
+    profile_payload = [
+        {
+            "symbol": "GOOGL",
+            "companyName": "Alphabet Inc.",
+            "exchange": "NASDAQ",
+            "currency": "USD",
+            "price": 178.50,
+            "marketCap": 4147998643276.9995,
+            "beta": 1.05,
+            "sector": "Communication Services",
+        }
+    ]
+    with respx.mock(base_url="https://financialmodelingprep.com/stable") as respx_mock:
+        respx_mock.get(
+            "/profile", params={"symbol": "GOOGL", "apikey": "test_key"}
+        ).mock(return_value=Response(200, json=profile_payload))
+        client = FMPClient(api_key="test_key")
+        try:
+            profile = await client.get_company_profile("GOOGL")
+            assert profile.symbol == "GOOGL"
+            assert isinstance(profile.market_cap, int)
+            assert profile.market_cap == 4147998643277
+        finally:
+            await client.aclose()
